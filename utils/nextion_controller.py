@@ -8,6 +8,7 @@ import redis
 import json
 from datetime import datetime
 from utils.wireless_utils import scan_networks, connect_wifi
+import os
 
 page_list = {
     "boot": 0,
@@ -94,7 +95,7 @@ possible_languages = ["Français", "English", "Español", "Deutsch", "Italiano",
 redis_client = redis.Redis(
     host='grateful-owl-12745.upstash.io',
     port=6379,
-    password='ATHJAAIjcDFlNDc5YmRlNjM5MWQ0ZmY5YTBkNzA5YmNlZDJiMmZlNHAxMA',
+    password=os.environ.get("CUISTOVOICE_DATABASE_PASSWORD", "ATHJAAIjcDFlNDc5YmRlNjM5MWQ0ZmY5YTBkNzA5YmNlZDJiMmZlNHAxMA"),
     ssl=True
 )
 MEMORY_KEY = "cuistovoice:database"
@@ -465,7 +466,7 @@ if __name__ == '__main__':
     controller.set_page("main")
     controller.run_command('t0.txt="Hello Nextion!"')
     controller.is_listening(True)
-    controller.set_island_text("Bonjour Nextion!")
+    controller.set_island_text("Hello Nextion !")
 
     import time
     try:

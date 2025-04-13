@@ -21,7 +21,6 @@ from pydub import AudioSegment
 # Removed the try...except block to ensure proper import or raise error
 from functions_utils import music_interrupt_event
 
-
 # Paramètres audio
 RECORDER_SAMPLE_RATE = 16000 # Default, will be updated by Porcupine init
 OPENAI_SAMPLE_RATE = 24000 # OpenAI requires 24kHz
@@ -53,7 +52,8 @@ class VoiceAgent:
         on_response_done: Optional[Callable] = None,
         on_transcript: Optional[Callable[[str], None]] = None,
         on_error: Optional[Callable[[Exception], None]] = None,
-        history_file: str = "messages_history.json"
+        history_file: str = "messages_history.json",
+        nextion_controller: Optional[object] = None
     ):
         """
         Initialise un agent vocal.
@@ -86,6 +86,7 @@ class VoiceAgent:
         self.instructions = instructions
         self.auto_reconnect = auto_reconnect
         self.turn_detection = turn_detection
+        self.nextion_controller = nextion_controller
         
         # Callbacks
         self.on_response_start = on_response_start
@@ -108,6 +109,15 @@ class VoiceAgent:
         except pvporcupine.PorcupineError as e:
             print(f"Erreur d'initialisation de Porcupine: {e}")
             raise
+
+        # Nextion initialization
+        if self.nextion_controller:
+            try:
+                self.nextion_controller.connect()
+                print("Nextion controller initialized.")
+            except Exception as e:
+                print(f"Error initializing Nextion controller: {e}")
+                raise
         
         # Sounddevice InputStream Initialization
         self.input_stream: Optional[sd.InputStream] = None
@@ -478,16 +488,19 @@ class VoiceAgent:
         elif event.type == "input_audio_buffer.speech_stopped":
             print("[User stops speaking]")
             self.is_user_speaking = False
+            # Remove listening indicator from Nextion screen
+            if self.nextion_controller:
+                self.nextion_controller.is_listening(False)
             # Stop sending audio *unless* music is playing (handled separately)
             # Go back to waiting for wake word *unless* music is playing
             if not self._pending_music_interrupt_check:
-                 self._should_send_audio = False
-                 self._waiting_for_wakeword = True
-                 print("Parole arrêtée. En attente du mot-clé...")
+                self._should_send_audio = False
+                self._waiting_for_wakeword = True
+                print("Parole arrêtée. En attente du mot-clé...")
             else:
-                 # If speech stops *during* the pending check window (e.g., user says wake word then nothing),
-                 # keep listening state active until timeout or speech_started.
-                 print("Parole arrêtée (during pending music interrupt check). Listening state remains active.")
+                # If speech stops *during* the pending check window (e.g., user says wake word then nothing),
+                # keep listening state active until timeout or speech_started.
+                print("Parole arrêtée (during pending music interrupt check). Listening state remains active.")
 
             if self.current_user_audio_chunks:
                 # Combine, encode, and save user audio message
@@ -739,6 +752,9 @@ class VoiceAgent:
                             keyword_index = self.porcupine.process(frame_int16)
                             if keyword_index >= 0:
                                 print(f"Mot-clé détecté (index {keyword_index})!")
+                                # Display listening indicator on nextion
+                                if self.nextion_controller:
+                                    self.nextion_controller.is_listening(True)
                                 if self.is_playing_music:
                                     print("--- Interruption de la musique par mot-clé ---")
                                     music_interrupt_event.set() # Signal playback thread to pause

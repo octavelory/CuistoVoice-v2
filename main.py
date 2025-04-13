@@ -78,6 +78,7 @@ else:
     keyword_paths = ["models/cuistovoice_wakeword_rpi.ppn"]
     print("Using Raspberry Pi keyword.")
 
+### set nextion controller in functions_utils
 set_nextion_controller(nextion_controller)
 
 # --- Clear History File ---
@@ -144,7 +145,8 @@ async def main():
         turn_detection={"type": "semantic_vad", "eagerness": "medium"}, # Adjusted eagerness
         tools = tools,
         tool_handlers=tool_handlers,
-        history_file="messages_history.json" # Pass history file path
+        history_file="messages_history.json", # Pass history file path
+        nextion_controller = nextion_controller # Pass the Nextion controller instance
     )
 
     # --- Link Agent Methods/Events via Callbacks ---

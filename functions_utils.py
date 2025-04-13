@@ -162,7 +162,6 @@ def set_agent_set_music_flag_callback(callback: Callable[[bool], None]):
     _agent_set_music_flag_callback = callback
 # --- End New Agent Callback Setters ---
 
-
 def display_shopping_list(shopping_list):
     nextion_controller.set_page("shoppinglist")
     if len(shopping_list) == 0:
@@ -413,7 +412,7 @@ def clear_shopping_list():
 
 def create_recipe(description = None, num_people = 1):
     # Set nextion page to 'recipe' if the controller is available.
-    if nextion_controller is not None:
+    if nextion_controller:
         nextion_controller.set_page("recipe")
         nextion_controller.run_command("vis t0,1")
         nextion_controller.run_command('slt0.txt=""')
