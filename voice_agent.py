@@ -7,13 +7,11 @@ import json
 import os
 import threading # Added
 import time
-import struct # Added
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 import sounddevice as sd  # Added
 import pvporcupine # Added
-import pvrecorder # Added
 from openai import AsyncOpenAI
 from openai.types.beta.realtime.session import Session
 from openai.resources.beta.realtime.realtime import AsyncRealtimeConnection
@@ -110,22 +108,25 @@ class VoiceAgent:
         except pvporcupine.PorcupineError as e:
             print(f"Erreur d'initialisation de Porcupine: {e}")
             raise
-
-        # PvRecorder Initialization
+        
+        # Sounddevice InputStream Initialization
+        self.input_stream: Optional[sd.InputStream] = None
+        self._input_buffer = bytearray() # Buffer for Porcupine processing
+        self._input_block_size = 512 # Adjust as needed, smaller might be more responsive
         try:
-            # List available devices
-            # devices = pvrecorder.PvRecorder.get_audio_devices()
-            # print("Available audio devices:", devices)
-            # You might need to select a specific device_index if default doesn't work
-            self.recorder = pvrecorder.PvRecorder(
-                frame_length=self.porcupine_frame_length,
-                device_index=-1 # Use default device
+            # Ensure Porcupine's sample rate is used for input stream
+            self.input_stream = sd.InputStream(
+                samplerate=RECORDER_SAMPLE_RATE,
+                blocksize=self._input_block_size, # Process audio in smaller chunks
+                channels=CHANNELS,
+                dtype=np.int16, # 16-bit PCM
+                callback=self._audio_input_callback,
+                device=None # Use default input device
             )
-            if self.recorder.sample_rate != RECORDER_SAMPLE_RATE:
-                 print(f"Warning: PvRecorder sample rate ({self.recorder.sample_rate}) != Porcupine sample rate ({RECORDER_SAMPLE_RATE}).")
-                 # Consider raising an error or attempting to reinitialize recorder if possible
+            print(f"Sounddevice InputStream initialisé avec sample_rate={RECORDER_SAMPLE_RATE}, blocksize={self._input_block_size}")
         except Exception as e:
-            print(f"Erreur d'initialisation de PvRecorder: {e}")
+            print(f"Erreur d'initialisation de sounddevice InputStream: {e}")
+            sd.check_input_settings(samplerate=RECORDER_SAMPLE_RATE, channels=CHANNELS, dtype=np.int16) # Check settings for more info
             if hasattr(self, 'porcupine'):
                 self.porcupine.delete()
             raise
@@ -157,7 +158,7 @@ class VoiceAgent:
         self._speaking_check_task = None
         
         # Threading & Async Loop
-        self.audio_thread: Optional[threading.Thread] = None
+        # self.audio_thread: Optional[threading.Thread] = None # REMOVED - No separate thread needed
         self.loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Gestion des outils
@@ -195,21 +196,19 @@ class VoiceAgent:
         self.running = True
         self.loop = asyncio.get_running_loop() # Capture the loop
 
-        # Start PvRecorder
+        # Start Sounddevice InputStream
         try:
-            self.recorder.start()
-            print("PvRecorder démarré.")
+            if self.input_stream:
+                self.input_stream.start()
+                print("Sounddevice InputStream démarré.")
+            else:
+                raise RuntimeError("Input stream not initialized.")
         except Exception as e:
-            print(f"Erreur au démarrage de PvRecorder: {e}")
+            print(f"Erreur au démarrage de Sounddevice InputStream: {e}")
             self.running = False
             if hasattr(self, 'porcupine'):
                 self.porcupine.delete()
             return
-
-        # Start audio processing thread
-        self.audio_thread = threading.Thread(target=self._audio_processing_loop, daemon=True)
-        self.audio_thread.start()
-        print("Thread de traitement audio démarré.")
 
         # Start main agent task (connects to OpenAI etc.)
         self.main_task = asyncio.create_task(self._run_agent())
@@ -245,23 +244,16 @@ class VoiceAgent:
                 print(f"Erreur lors de l'arrêt de la tâche principale: {e}")
 
 
-        # Stop recorder
-        if hasattr(self, 'recorder') and self.recorder:
+        # Stop sounddevice stream
+        if self.input_stream:
             try:
-                self.recorder.stop()
-                print("PvRecorder arrêté.")
+                self.input_stream.stop()
+                self.input_stream.close()
+                print("Sounddevice InputStream arrêté et fermé.")
             except Exception as e:
-                print(f"Erreur à l'arrêt de PvRecorder: {e}")
+                print(f"Erreur à l'arrêt/fermeture de Sounddevice InputStream: {e}")
             finally:
-                self.recorder.delete()
-                print("PvRecorder supprimé.")
-
-        # Stop audio thread
-        if self.audio_thread and self.audio_thread.is_alive():
-            print("Attente de la fin du thread audio...")
-            self.audio_thread.join(timeout=2.0) # Wait for thread to finish
-            if self.audio_thread.is_alive():
-                print("Le thread audio n'a pas pu être arrêté proprement.")
+                self.input_stream = None
 
         # Delete Porcupine
         if hasattr(self, 'porcupine') and self.porcupine:
@@ -692,69 +684,77 @@ class VoiceAgent:
                 # self._should_send_audio = False
                 # self._waiting_for_wakeword = True
 
-    def _audio_processing_loop(self):
-        """Runs in a separate thread to process audio input."""
-        print("Démarrage de la boucle de traitement audio...")
+    def _audio_input_callback(self, indata: np.ndarray, frames: int, time_info, status):
+        """
+        Callback function for the sounddevice InputStream.
+        Processes incoming audio for wake word detection and streaming to OpenAI.
+        Runs on a separate thread managed by sounddevice.
+        """
+        if not self.running:
+            return # Stop processing if agent is stopping
+
+        if status:
+            print(f"[Audio Callback] Status: {status}")
+            # Consider handling specific statuses like sd.CallbackFlags.input_overflow
+
         try:
-            while self.running:
-                # --- Check for music interrupt timeout ---
-                if self._pending_music_interrupt_check and \
-                   self._interrupt_check_start_time is not None and \
-                   (time.time() - self._interrupt_check_start_time > 5.0):
-                    print("No speech detected within 5 seconds after music interrupt.")
-                    # Reset check state *before* attempting resume
-                    self._pending_music_interrupt_check = False
-                    self._interrupt_check_start_time = None
-                    if self.is_playing_music: # Check the flag before resuming
-                        print("Attempting to resume music playback...")
-                        self.resume_music_playback() # Signal music to resume
-                        # If music resumes, go back to waiting for wake word state
-                        self.reset_to_wakeword_state() # Reset state after signaling resume
-                    else:
-                        print("Music was not playing, no resume needed.")
-                        # Ensure state is reset if timeout happens without music playing
-                        self.reset_to_wakeword_state()
+            # Convert numpy array (int16) to bytes
+            pcm_bytes_16khz = indata.tobytes()
 
-                # --- Read Audio ---
-                try:
-                    pcm = self.recorder.read()
-                except pvrecorder.PvRecorderError as e:
-                    print(f"Erreur de lecture PvRecorder: {e}")
-                    time.sleep(0.1) # Sleep briefly on read error
-                    continue
-                except Exception as e:
-                    print(f"Erreur inattendue dans la lecture audio: {e}")
-                    time.sleep(0.1)
-                    continue
+            # --- Check for music interrupt timeout (Run this check periodically, e.g., here) ---
+            # Note: This check now runs frequently within the audio callback.
+            if self._pending_music_interrupt_check and \
+               self._interrupt_check_start_time is not None and \
+               (time.time() - self._interrupt_check_start_time > 5.0):
+                print("No speech detected within 5 seconds after music interrupt.")
+                # Reset check state *before* attempting resume
+                self._pending_music_interrupt_check = False
+                self._interrupt_check_start_time = None
+                if self.is_playing_music: # Check the flag before resuming
+                    print("Attempting to resume music playback...")
+                    self.resume_music_playback() # Signal music to resume
+                    # If music resumes, go back to waiting for wake word state
+                    self.reset_to_wakeword_state() # Reset state after signaling resume
+                else:
+                    print("Music was not playing, no resume needed.")
+                    # Ensure state is reset if timeout happens without music playing
+                    self.reset_to_wakeword_state()
 
-                # --- Process Audio Frame ---
-                if self._waiting_for_wakeword:
-                    # Don't process for wake word if we are pending the interrupt check
-                    # (This check might be redundant now but safe)
-                    if not self._pending_music_interrupt_check:
+            # --- Process Audio Frame ---
+            if self._waiting_for_wakeword:
+                # Don't process for wake word if we are pending the interrupt check
+                if not self._pending_music_interrupt_check:
+                    # Buffer audio data for Porcupine
+                    self._input_buffer.extend(pcm_bytes_16khz)
+
+                    # Process in chunks matching Porcupine frame length
+                    while len(self._input_buffer) >= self.porcupine_frame_length * SAMPLE_WIDTH: # Multiply by bytes per sample
+                        frame_bytes = self._input_buffer[:self.porcupine_frame_length * SAMPLE_WIDTH]
+                        del self._input_buffer[:self.porcupine_frame_length * SAMPLE_WIDTH]
+
+                        # Convert bytes back to list of int16 for Porcupine
+                        frame_int16 = np.frombuffer(frame_bytes, dtype=np.int16).tolist()
+
                         try:
-                            keyword_index = self.porcupine.process(pcm)
+                            keyword_index = self.porcupine.process(frame_int16)
                             if keyword_index >= 0:
                                 print(f"Mot-clé détecté (index {keyword_index})!")
                                 if self.is_playing_music:
                                     print("--- Interruption de la musique par mot-clé ---")
                                     music_interrupt_event.set() # Signal playback thread to pause
-                                    # Start the 5-second check
                                     self._pending_music_interrupt_check = True
                                     self._interrupt_check_start_time = time.time()
                                     print("Waiting 5s for speech before resuming music...")
-                                    # --- Immediately switch to listening state ---
                                     self._waiting_for_wakeword = False
                                     self._should_send_audio = True
                                     print("En écoute (après interruption musique)...")
-                                    # --- End state switch ---
                                 else:
-                                    # Normal wake word detection (no music playing)
                                     self._waiting_for_wakeword = False
                                     self._should_send_audio = True
                                     print("En écoute...")
-                                    # Optionally send this frame? (Consider if needed)
-
+                                    # Clear buffer after wake word detection? Optional.
+                                    # self._input_buffer.clear()
+                                break # Exit inner loop once wake word detected in this callback cycle
                         except pvporcupine.PorcupineError as e:
                              print(f"Erreur de traitement Porcupine: {e}")
                              self.reset_to_wakeword_state() # Reset state on error
@@ -762,31 +762,24 @@ class VoiceAgent:
                              print(f"Erreur inattendue dans le traitement Porcupine: {e}")
                              self.reset_to_wakeword_state() # Reset state on error
 
-                else: # Not waiting for wake word (actively listening)
-                    if self._should_send_audio:
-                        try:
-                            # Convert the frame read at the start of the loop
-                            pcm_bytes_16khz = struct.pack('%dh' % len(pcm), *pcm)
+            else: # Not waiting for wake word (actively listening)
+                if self._should_send_audio:
+                    # Send the raw 16kHz PCM data received in this callback
+                    if self.loop:
+                        # Use pcm_bytes_16khz directly
+                        asyncio.run_coroutine_threadsafe(self._send_audio_chunk(pcm_bytes_16khz), self.loop)
 
-                            # Send audio chunk asynchronously
-                            if self.loop:
-                                asyncio.run_coroutine_threadsafe(self._send_audio_chunk(pcm_bytes_16khz), self.loop)
-
-                            # Store audio chunk if OpenAI has detected speech start
-                            if self.is_user_speaking:
-                                self.current_user_audio_chunks.append(pcm_bytes_16khz)
-                        except Exception as e:
-                             # Handle potential packing or threadsafe call errors
-                             print(f"Erreur lors de la préparation/envoi du chunk audio: {e}")
-                             # Consider resetting state on persistent errors
-                             # self.reset_to_wakeword_state()
-                    # else: If _should_send_audio is False (e.g., paused), do nothing with the frame.
-                    # Reading it at the start was enough to clear the buffer. No sleep needed here.
-
+                    # Store audio chunk if OpenAI has detected speech start
+                    if self.is_user_speaking:
+                        self.current_user_audio_chunks.append(pcm_bytes_16khz)
+                    else:
+                        # If not actively speaking but listening, clear the buffer used for wake word detection
+                        # to avoid processing old data if we switch back to wake word state.
+                        self._input_buffer.clear()
         except Exception as e:
-            print(f"Erreur fatale dans la boucle de traitement audio: {e}")
-        finally:
-            print("Fin de la boucle de traitement audio.")
+            print(f"Erreur dans le callback audio: {e}")
+            # Consider resetting state or logging more details
+            # self.reset_to_wakeword_state()
 
     def pause_listening(self):
         """Pause l'envoi d'audio (ne désactive pas la détection de mot-clé)."""
@@ -813,6 +806,7 @@ class VoiceAgent:
         self._interrupt_check_start_time = None
         # Clear any partial user audio chunks if resetting state
         self.current_user_audio_chunks = []
+        self._input_buffer.clear() # Clear Porcupine buffer as well
 
     def resume_music_playback(self):
         """Signals the music playback thread to resume by clearing the interrupt event."""
