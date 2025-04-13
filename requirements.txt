@@ -1,0 +1,13 @@
+pyaudio
+numpy
+openai
+openai[realtime]
+sounddevice
+pydub
+pvporcupine
+pvrecorder
+requests
+bs4
+redis
+nextion
+deezer-downloader
