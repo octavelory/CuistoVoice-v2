@@ -1,0 +1,272 @@
+[
+    {
+        "name": "create_recipe",
+        "type": "function",
+        "description": "Crée une recette à partir d'une description et l'affiche à l'utilisateur. Tu dois utiliser cette fonction pour créer une recette, car tu n'êtes pas capable d'en créer une vous-même ! Tu ne peux pas fournir de recette à l'utilisateur sans utiliser cette fonction ! Les préférences de l'utilisateur seront automatiquement prises en compte, mais tu peux les préciser dans la description si tu le souhaites.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "description": "La description de la recette à créer. Ex. : 'Une recette de gâteau au chocolat avec des noix sans gluten'. Pour indiquer pour combien de personnes la recette est prévue, utilise le paramètre 'num_people'."
+                },
+                "num_people": {
+                    "type": "integer",
+                    "description": "Indique pour combien de personnes la recette est destinée."
+                }
+            },
+            "required": ["description", "num_people"]
+        }
+    },
+    {
+        "name": "add_memory",
+        "type": "function",
+        "description": "Ajoute un souvenir à la base de données. **Tu dois être proactif**, tu dois enregistrer autant d'informations sur l'utilisateur que nécessaire pour de futurs usages, sans que celui-ci ne te le demande explicitement.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Le titre du souvenir. Ex. : 'Plat préféré'."
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Le contenu du souvenir. Ex. : 'Le poulet rôti'."
+                }
+            },
+            "required": ["title", "content"]
+        }
+    },
+    {
+        "name": "delete_memory",
+        "type": "function",
+        "description": "Supprime un souvenir de la base de données.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "memory_id": {
+                    "type": "string",
+                    "description": "L'ID du souvenir à supprimer."
+                }
+            },
+            "required": ["memory_id"]
+        }
+    },
+    {
+        "name": "edit_memory",
+        "type": "function",
+        "description": "Modifie un souvenir dans la base de données.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "memory_id": {
+                    "type": "string",
+                    "description": "L'ID du souvenir à modifier."
+                },
+                "new_title": {
+                    "type": "string",
+                    "description": "Optionnel. Le nouveau titre du souvenir. Ex. : 'Plat préféré'."
+                },
+                "new_content": {
+                    "type": "string",
+                    "description": "Optionnel. Le nouveau contenu du souvenir. Ex. : 'Le poulet rôti'."
+                }
+            },
+            "required": ["memory_id"]
+        }
+    },
+    {
+        "name": "get_shopping_list",
+        "type": "function",
+        "description": "Renvoie la liste de courses et l'affiche également à l'utilisateur sur l'écran intégré.",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "add_to_shopping_list",
+        "type": "function",
+        "description": "Ajoute un article à la liste de courses.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "item": {
+                    "type": "string",
+                    "description": "L'article à ajouter à la liste de courses. Ex. : 'Lait'."
+                },
+                "quantity": {
+                    "type": "string",
+                    "description": "Par défaut 1. La quantité de l'article à ajouter. Ex. : '3'."
+                },
+                "additional_info": {
+                    "type": "string",
+                    "description": "Optionnel. Informations supplémentaires concernant l'article, par exemple 'bio de préférence'."
+                }
+            },
+            "required": ["item", "quantity"]
+        }
+    },
+    {
+        "name": "remove_from_shopping_list",
+        "type": "function",
+        "description": "Supprime un article de la liste de courses.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "item": {
+                    "type": "string",
+                    "description": "L'article à retirer de la liste de courses. Ex. : 'Lait'."
+                }
+            },
+            "required": ["item"]
+        }
+    },
+    {
+        "name": "edit_item_from_shopping_list",
+        "type": "function",
+        "description": "Remplace un article dans la liste de courses.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "item": {
+                    "type": "string",
+                    "description": "L'article à remplacer dans la liste de courses. Ex. : 'Lait'."
+                },
+                "new_item": {
+                    "type": "string",
+                    "description": "Optionnel. Le nouvel article à ajouter à la liste de courses. Ex. : 'Lait de soja'."
+                },
+                "new_quantity": {
+                    "type": "string",
+                    "description": "Optionnel. La quantité du nouvel article à ajouter. Ex. : '3'."
+                },
+                "new_additional_info": {
+                    "type": "string",
+                    "description": "Optionnel. Informations supplémentaires concernant le nouvel article, par exemple 'bio de préférence'."
+                }
+            },
+            "required": ["item"]
+        }
+    },
+    {
+        "name": "clear_shopping_list",
+        "type": "function",
+        "description": "Efface la liste de courses.",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "calculate",
+        "type": "function",
+        "description": "Calcule une expression mathématique. L'expression doit être interprétable par la fonction eval de Python.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "L'expression mathématique à calculer. Ex. : '2 + 2'."
+                }
+            },
+            "required": ["expression"]
+        }
+    },
+    {
+        "name": "add_timer",
+        "type": "function",
+        "description": "Démarre un minuteur.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "time_in_seconds": {
+                    "type": "integer",
+                    "description": "La durée du minuteur en secondes. Ex. : '60'."
+                },
+                "timer_name": {
+                    "type": "string",
+                    "description": "Le nom du minuteur. Ex. : 'Cuisson du gâteau'."
+                }
+            },
+            "required": ["time_in_seconds", "timer_name"]
+        }
+    },
+    {
+        "name": "edit_timer",
+        "type": "function",
+        "description": "Modifie un minuteur.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "timer_id": {
+                    "type": "string",
+                    "description": "L'ID du minuteur à modifier."
+                },
+                "new_time_in_seconds": {
+                    "type": "integer",
+                    "description": "Optionnel. La nouvelle durée du minuteur en secondes. Ex. : '60'."
+                },
+                "new_timer_name": {
+                    "type": "string",
+                    "description": "Optionnel. Le nouveau nom du minuteur. Ex. : 'Cuisson du gâteau'."
+                }
+            },
+            "required": ["timer_id"]
+        }
+    },
+    {
+        "name": "delete_timer",
+        "type": "function",
+        "description": "Annule un minuteur.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "timer_id": {
+                    "type": "string",
+                    "description": "L'ID du minuteur à annuler."
+                }
+            },
+            "required": ["timer_id"]
+        }
+    },
+    {
+        "name": "google_search",
+        "type": "function",
+        "description": "Effectue une recherche sur Google.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "La requête à utiliser pour la recherche sur Google. Ex. : 'Combien de calories dans une pomme ?'."
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "play_music",
+        "type": "function",
+        "description": "Joue de la musique à partir d'une recherche. Arrête toute musique en cours avant de démarrer la nouvelle. Tu peux appeler cette fonction si l'utilisateur te demande de mettre de la musique. L'utilisateur a un compte Spotify Premium tu peux donc jouer n'importe quelle musique.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "search": {
+                    "type": "string",
+                    "description": "La requête à utiliser pour la recherche de musique. Ex. : 'Chill music'."
+                }
+            },
+            "required": ["search"]
+        }
+    },
+    {
+        "name": "stop_music",
+        "type": "function",
+        "description": "Arrête la musique en cours de lecture.",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+        }
+    }
+]
