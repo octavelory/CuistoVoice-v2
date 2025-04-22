@@ -787,15 +787,25 @@ def play_music(search=None):
     print(f"[Function: play_music] Proceeding with download for: '{search}'")
 
     # --- Download Track ---
-    # ... (download logic remains the same) ...
-    download_result = song_manager.download_track(search)
-    if not download_result or download_result.get("status") != "success":
-        # ... (error handling) ...
-        error_msg = f"Failed to download track for '{search}'. Reason: {download_result.get('message', 'Unknown error')}"
-        print(f"[Function: play_music] {error_msg}")
-        return {"status": "error", "message": error_msg, "no_response_needed": False}
+    # Pass the 10-second timeout here
+    download_result = song_manager.download_track(search, timeout=10)
 
-    # ... (getting title, artist, path remains the same) ...
+    # Check for success, timeout, or other errors
+    if not download_result or download_result.get("status") not in ["success"]:
+        if download_result and download_result.get("status") == "timeout":
+             error_msg = f"Le téléchargement de la musique pour '{search}' a dépassé le délai imparti (10 secondes). Veuillez réessayer ou choisir une autre chanson."
+             print(f"[Function: play_music] Download timed out: {error_msg}")
+             # Return error message to the assistant (no_response_needed=False)
+             return {"status": "error", "message": error_msg, "no_response_needed": False}
+        else:
+             # Handle other download errors
+             error_msg = f"Failed to download track for '{search}'. Reason: {download_result.get('message', 'Unknown error')}"
+             print(f"[Function: play_music] {error_msg}")
+             # Return error message to the assistant (no_response_needed=False)
+             return {"status": "error", "message": error_msg, "no_response_needed": False}
+
+
+    # ... rest of the function remains the same (getting title, decoding, starting thread) ...
     title = download_result.get("title", "Unknown Title")
     artist = download_result.get("artist", "Unknown Artist")
     file_path = download_result.get("file")

@@ -153,8 +153,10 @@ class VoiceAgent:
         self.last_audio_item_id: Optional[str] = None
         self.transcript_items: Dict[str, str] = {}
         self.current_assistant_response: str = "" # Added for accumulating response text
-        self._pending_music_interrupt_check: bool = False # Added for false wake word check
+        self._pending_music_interrupt_check: bool = False # Added for false wake word check during music
         self._interrupt_check_start_time: Optional[float] = None # Added
+        self._pending_non_music_wakeword_check: bool = False # Added for false wake word check without music
+        self._non_music_check_start_time: Optional[float] = None # Added
 
         # Historique de la conversation
         self.messages_history: List[Dict[str, Any]] = [] # Added
@@ -477,10 +479,18 @@ class VoiceAgent:
             if self._pending_music_interrupt_check:
                 print("Speech detected after music interrupt. Proceeding with interaction.")
                 self._pending_music_interrupt_check = False # Cancel the check
-                # Transition to listening state
-                self._waiting_for_wakeword = False
-                self._should_send_audio = True
+                self._interrupt_check_start_time = None
+                # Transition to listening state (already done when interrupt occurred)
+                # self._waiting_for_wakeword = False
+                # self._should_send_audio = True
                 # The music playback thread should stop itself based on the interrupt event
+
+            # If we were waiting for speech after a non-music wake word, confirm it.
+            if self._pending_non_music_wakeword_check:
+                print("Speech detected after non-music wake word. Proceeding with interaction.")
+                self._pending_non_music_wakeword_check = False # Cancel the check
+                self._non_music_check_start_time = None
+                # State is already listening
 
             self.is_user_speaking = True
             self.current_user_audio_chunks = [] # Clear previous chunks
@@ -491,16 +501,15 @@ class VoiceAgent:
             # Remove listening indicator from Nextion screen
             if self.nextion_controller:
                 self.nextion_controller.is_listening(False)
-            # Stop sending audio *unless* music is playing (handled separately)
-            # Go back to waiting for wake word *unless* music is playing
-            if not self._pending_music_interrupt_check:
+            # Stop sending audio *unless* music is playing or pending check
+            # Go back to waiting for wake word *unless* music is playing or pending check
+            if not self._pending_music_interrupt_check and not self._pending_non_music_wakeword_check:
                 self._should_send_audio = False
                 self._waiting_for_wakeword = True
                 print("Parole arrêtée. En attente du mot-clé...")
             else:
-                # If speech stops *during* the pending check window (e.g., user says wake word then nothing),
-                # keep listening state active until timeout or speech_started.
-                print("Parole arrêtée (during pending music interrupt check). Listening state remains active.")
+                # If speech stops *during* a pending check window, keep listening state active until timeout.
+                print("Parole arrêtée (during pending check). Listening state remains active.")
 
             if self.current_user_audio_chunks:
                 # Combine, encode, and save user audio message
@@ -733,10 +742,19 @@ class VoiceAgent:
                     # Ensure state is reset if timeout happens without music playing
                     self.reset_to_wakeword_state()
 
+            # --- Check for non-music wake word timeout ---
+            if self._pending_non_music_wakeword_check and \
+               self._non_music_check_start_time is not None and \
+               (time.time() - self._non_music_check_start_time > 5.0): # 5 second timeout
+                print("No speech detected within 5 seconds after non-music wake word. Assuming false positive.")
+                self._pending_non_music_wakeword_check = False
+                self._non_music_check_start_time = None
+                self.reset_to_wakeword_state() # Go back to waiting
+
             # --- Process Audio Frame ---
             if self._waiting_for_wakeword:
-                # Don't process for wake word if we are pending the interrupt check
-                if not self._pending_music_interrupt_check:
+                # Don't process for wake word if we are pending any check
+                if not self._pending_music_interrupt_check and not self._pending_non_music_wakeword_check:
                     # Buffer audio data for Porcupine
                     self._input_buffer.extend(pcm_bytes_16khz)
 
@@ -765,11 +783,15 @@ class VoiceAgent:
                                     self._should_send_audio = True
                                     print("En écoute (après interruption musique)...")
                                 else:
+                                    # --- Wake word detected without music ---
                                     self._waiting_for_wakeword = False
                                     self._should_send_audio = True
-                                    print("En écoute...")
-                                    # Clear buffer after wake word detection? Optional.
-                                    # self._input_buffer.clear()
+                                    self._pending_non_music_wakeword_check = True # Start check
+                                    self._non_music_check_start_time = time.time() # Record time
+                                    print("En écoute (waiting 5s for speech confirmation)...")
+
+                                # Clear buffer after wake word detection? Optional.
+                                # self._input_buffer.clear()
                                 break # Exit inner loop once wake word detected in this callback cycle
                         except pvporcupine.PorcupineError as e:
                              print(f"Erreur de traitement Porcupine: {e}")
@@ -818,11 +840,16 @@ class VoiceAgent:
         self._waiting_for_wakeword = True
         self._should_send_audio = False
         self.is_user_speaking = False # Ensure this is reset too
-        self._pending_music_interrupt_check = False # Cancel any pending check
+        self._pending_music_interrupt_check = False # Cancel any pending music check
         self._interrupt_check_start_time = None
+        self._pending_non_music_wakeword_check = False # Cancel any pending non-music check
+        self._non_music_check_start_time = None
         # Clear any partial user audio chunks if resetting state
         self.current_user_audio_chunks = []
         self._input_buffer.clear() # Clear Porcupine buffer as well
+        # Clear listening indicator on Nextion
+        if self.nextion_controller:
+            self.nextion_controller.is_listening(False)
 
     def resume_music_playback(self):
         """Signals the music playback thread to resume by clearing the interrupt event."""

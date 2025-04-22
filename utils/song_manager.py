@@ -146,13 +146,13 @@ class SongManager:
                 logging.error("Error: All get_queue requests failed.")
                 return []
 
-    def download_track(self, search):
+    def download_track(self, search, timeout=300): # Added timeout parameter with default
         """
         Recherche une piste et lance son téléchargement, en surveillant son état jusqu'à complétion.
         Pour démarrer le téléchargement, trois requêtes simultanées sont lancées et la première réponse valide est utilisée.
         Returns a dictionary with status, audio_data, file path, and metadata on success.
         """
-        logging.info(f"Starting download process for search: '{search}'")
+        logging.info(f"Starting download process for search: '{search}' with timeout {timeout}s") # Log timeout
         song = self.search_track(search)
         if not song:
             logging.error(f"Search failed for '{search}'. Cannot proceed with download.")
@@ -185,7 +185,8 @@ class SongManager:
         logging.info(f"Download task {task_id} started. Monitoring queue...")
 
         done = False
-        max_wait_time = 300
+        # Use the provided timeout parameter
+        max_wait_time = timeout
         start_wait_time = time.time()
         file_path = None
 
@@ -234,16 +235,27 @@ class SongManager:
                     break
 
             if not task_found and current_queue != []:
+                # Check elapsed time more explicitly within the loop if needed,
+                # but the main while condition handles the overall timeout.
+                if (time.time() - start_wait_time) >= max_wait_time:
+                    logging.error(f"Download task {task_id} timed out after {max_wait_time} seconds (check within loop).")
+                    return {"status": "timeout", "message": f"Download task timed out after {max_wait_time} seconds."} # Specific status for timeout
                 logging.warning(f"Task {task_id} not found in the current queue. Waiting...")
 
             if done:
                 break
 
-            time.sleep(1)
+            time.sleep(1) # Keep the sleep
 
         if not done:
-            logging.error(f"Download task {task_id} timed out after {max_wait_time} seconds.")
-            return {"status": "error", "message": "Download task timed out."}
+            # Check if timeout was the reason for loop exit
+            if (time.time() - start_wait_time) >= max_wait_time:
+                 logging.error(f"Download task {task_id} timed out after {max_wait_time} seconds (check after loop).")
+                 return {"status": "timeout", "message": f"Download task timed out after {max_wait_time} seconds."} # Specific status for timeout
+            else:
+                 # If loop exited for another reason without done=True (shouldn't happen ideally)
+                 logging.error(f"Download task {task_id} monitoring loop exited unexpectedly.")
+                 return {"status": "error", "message": "Download task monitoring failed unexpectedly."}
 
         if file_path and os.path.exists(file_path):
             try:
