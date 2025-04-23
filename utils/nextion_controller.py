@@ -125,12 +125,20 @@ class DummyNextionController:
         print("[DummyNextionController] connect called - no screen available")
     def set_page(self, page_id):
         print(f"[DummyNextionController] set_page called with: {page_id}")
+    def set_text(self, component: str, text: str):
+        print(f"[DummyNextionController] set_text called with: {component}, {text}")
+    def set_global_value(self, component: str, value: str):
+        print(f"[DummyNextionController] set_global_value called with: {component}, {value}")
     def run_command(self, command: str):
         print(f"[DummyNextionController] run_command called with: {command}")
     def is_listening(self, status: bool):
         print(f"[DummyNextionController] is_listening called with: {status}")
     def set_island_text(self, text: str):
         print(f"[DummyNextionController] set_island_text called with: {text}")
+    def set_island_icon(self, icon_name: str):
+        print(f"[DummyNextionController] set_island_icon called with: {icon_name}")
+    def set_island_touch(self, command: str):
+        print(f"[DummyNextionController] set_island_touch called with: {command}")
     def close(self):
         print("[DummyNextionController] close called")
 

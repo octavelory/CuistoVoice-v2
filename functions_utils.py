@@ -10,7 +10,7 @@ import time # Added
 import threading # Added
 import numpy as np # Added
 import sounddevice as sd # Added
-import io # Added
+import re
 from pydub import AudioSegment # Added
 from openai import OpenAI
 from utils.song_manager import SongManager # Added
@@ -28,6 +28,7 @@ redis_client = redis.Redis(
 
 # Clés utilisées pour stocker les données
 MEMORY_KEY = "cuistovoice:database"
+MAIN_CONFIG_KEY = "cuistovoice:main_config"
 SHOPPING_LIST_KEY = "cuistovoice:shopping_list"
 TIMERS_KEY = "cuistovoice:timers"
 
@@ -114,6 +115,12 @@ def read_shopping_list():
 def write_shopping_list(data):
     redis_client.set(SHOPPING_LIST_KEY, json.dumps(data))
 
+def read_location():
+    data_str = redis_client.get(MAIN_CONFIG_KEY)
+    if data_str:
+        data = json.loads(data_str)
+        return data.get("location", None)
+    return None
 # ---------------------------------------------------------------------------
 # NEXTION / AGENT CALLBACKS / GLOBALS
 # ---------------------------------------------------------------------------
@@ -302,7 +309,39 @@ def cancel_all_timers():
 # ---------------------------------------------------------------------------
 
 def google_search(query=None):
-    return {"status": "error", "message": "This feature is not available for now."}
+    print("[Function: google_search] Starting Google search...")
+    if query is None:
+        return {"status": "error", "message": "Query is missing."}
+    try:
+        response = openai_client.responses.create(
+            model="gpt-4.1-mini",
+            tools=[{
+                "type": "web_search_preview",
+                "user_location": {
+                    "type": "approximate",
+                    "city": read_location(),
+                }
+            }],
+            tool_choice={"type": "web_search_preview"},
+            input=[
+                {
+                    "role": "user",
+                    "content": f"Effectue une recherche Google sur la requête suivante : {query}."
+                }
+            ]
+        )
+        output_text = response.output[1].content[0].text
+        output_text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1', output_text)
+        output_text = re.sub(r'https?://[^\s]+', lambda m: m.group(0).split('/')[2], output_text)
+
+        return {
+            "status": "success",
+            "search_response": output_text,
+            "instructions_reminder": "Tu n'es pas obligé de donner les sources, mais si tu le fais, ne donne pas des liens, juste le noms des sites. Par exemple : \"Wikipedia, Le Monde, etc.\""
+        }
+    except Exception as e:
+        print(f"[Function: google_search] Error during Google search: {e}")
+        return {"status": "error", "message": "Une erreur s'est produite lors de la recherche sur Google."}
 
 def calculate(expression=None):
     if expression is None:
@@ -425,7 +464,7 @@ def create_recipe(description = None, num_people = 1):
     try:
         response = openai_client.chat.completions.create(
             model = "gpt-4o",
-            temperature = 0,
+            temperature = 0.1,
             response_format = {"type": "json_schema", "json_schema": recipe_schema},
             messages = [
                 {"role": "system", "content": "Tu es expert dans la création de recette. L'utilisateur va te donner une description de la recette qu'il veut et tu vas lui donner la recette complète, avec ingrédients et étapes. Attention : tu ne dois retourner que la recette, pas de texte en plus ! Par ailleurs, on te donnera également une base de données contenant des préférences et informations sur l'utilisateur, tu dois t'en servir comme contexte."},
@@ -440,7 +479,7 @@ def create_recipe(description = None, num_people = 1):
         nextion_controller.set_page("main")
         return {
             "status": "error",
-            "message": "Désolé, cette recette est trop complexe pour moi. Je ne peux pas la réaliser. C'est quelque chose qui arrive très rarement, mais je te conseille de reformuler ta demande pour qu'elle soit plus simple."
+            "message": "Désolé, cette recette est trop complexe pour moi ou infaisable. Je ne peux pas la réaliser. C'est quelque chose qui arrive très rarement, mais je te conseille de reformuler ta demande pour qu'elle soit plus simple."
         }
     else:
         nextion_controller.set_page("recipe")
@@ -450,7 +489,7 @@ def create_recipe(description = None, num_people = 1):
             time=recipe_data["time"],
             difficulty=recipe_data["difficulty"],
             materiel="\n - ".join(recipe_data["materiel"]),
-            ingredients="\n - ".join(recipe_data["ingredients"]),
+            ingredients="\n - ".join([f"{i+1}. {ingredient}" for i, ingredient in enumerate(recipe_data["ingredients"])]).replace("\n", "\r\n"),
             etapes="\n\n".join([f"{i+1}. {step}" for i, step in enumerate(recipe_data["steps"])]).replace("\n", "\r\n")
         )
         nextion_controller.set_text("slt0.txt", formatted_recipe)
@@ -849,7 +888,6 @@ def play_music(search=None):
              print("[Function: play_music] Clearing agent stop event before starting new thread.")
              agent_stop_event.clear()
 
-
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -925,5 +963,4 @@ def get_tool_handlers():
         print(f"Error: Could not decode functions.json at {FUNCTIONS_JSON_PATH}")
     except Exception as e:
         print(f"An unexpected error occurred while building tool handlers: {e}")
-
     return tool_handlers
