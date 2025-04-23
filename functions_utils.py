@@ -914,7 +914,7 @@ def play_music(search=None):
         current_playback_thread.start()
 
     # --- Return Immediately ---
-    start_message = f"Lecture de '{title}' par '{artist}' démarrée."
+    start_message = f"Lecture de '{title}' par '{artist}' terminée. Durée: {format_duration(duration_seconds)}."
     print(f"[Function: play_music] {start_message}")
     return {"status": "success", "message": start_message, "no_response_needed": True}
 
