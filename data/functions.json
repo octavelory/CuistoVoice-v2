@@ -259,14 +259,5 @@
             },
             "required": ["search"]
         }
-    },
-    {
-        "name": "stop_music",
-        "type": "function",
-        "description": "Arrête la musique en cours de lecture.",
-        "parameters": {
-            "type": "object",
-            "properties": {}
-        }
     }
 ]
