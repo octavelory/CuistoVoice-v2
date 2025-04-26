@@ -78,20 +78,20 @@ recipe_schema = {
 }
 
 recipe_format = """
-Recette pour {num_people} personne(s)
-Temps de préparation: {time}
-Difficulté: {difficulty}
-
+Recette pour {num_people} personne(s)\r
+Temps de préparation: {time}\r
+Difficulté: {difficulty}\r
+\r
 Matériel nécessaire:
-
+\r
  - {materiel}
 
 Ingrédients:
-
+\r
  - {ingredients}
 
 Étapes:
-
+\r
 {etapes}
 """
 
