@@ -9,6 +9,12 @@ import json
 from datetime import datetime
 from utils.wireless_utils import scan_networks, connect_wifi
 import os
+from typing import Optional, TYPE_CHECKING # Add Optional and TYPE_CHECKING for type hinting
+
+if TYPE_CHECKING:
+    # Import VoiceAgent only for type checking to avoid circular imports
+    # Adjust the import path based on your project structure (e.g., from ..main import VoiceAgent)
+    from ..voice_agent import VoiceAgent
 
 page_list = {
     "boot": 0,
@@ -151,6 +157,7 @@ class NextionControllerAsync:
         self.port = port
         self.baud_rate = baud_rate
         self._client = None
+        self._voice_agent: Optional['VoiceAgent'] = None # Add voice agent reference
 
         self.current_page = None
         self.listening_mode = False
@@ -173,6 +180,11 @@ class NextionControllerAsync:
         await self.set_island_icon(None)
         # Schedule time update loop in background
         asyncio.create_task(self.update_time_loop())
+
+    def set_voice_agent(self, agent: 'VoiceAgent'):
+        """Stores a reference to the VoiceAgent instance."""
+        self._voice_agent = agent
+        print("[NextionControllerAsync] VoiceAgent instance set.")
 
     async def _event_handler(self, evt_type, data):
         """
@@ -224,26 +236,13 @@ class NextionControllerAsync:
                         await self.run_command('config.cb0.val=0')
             if data.page_id == 1 and data.component_id == 3:
                 # New: Interrupt assistant even when talking, as if wakeword was detected.
-                try:
-                    from __main__ import client
-                except ImportError:
-                    print("[Nextion] Error: client not available.")
-                    client = None
-                if client:
-                    print("[Nextion] Interruption command received: interrupting assistant and activating user listening.")
-                    if hasattr(client, 'audio_player') and client.audio_player:
-                        print("[Nextion] Stopping audio player...")
-                        client.audio_player.stop()
-                    client.sending_audio = True
-                    # Cancel any wakeword timeout task, if present.
-                    if client._wakeword_timeout_task is not None:
-                        client._wakeword_timeout_task.cancel()
-                        client._wakeword_timeout_task = None
-                    # Activate listening mode on Nextion
-                    # Note: This uses the DummyNextionController's is_listening method, which is synchronous.
-                    await self.is_listening(True)
+                # (when the display is clicked).
+                if self._voice_agent:
+                    print("[Nextion Touch] Simulating wake word detection...")
+                    await self._voice_agent.simulate_wakeword_detection()
                 else:
-                    print("[Nextion] No client available to interrupt.")
+                    print("[Nextion Touch] Warning: VoiceAgent not set, cannot simulate wake word.")
+                pass
             if data.page_id == 6 and data.component_id == 5:
                 # si on ajuste le volume
                 volume = await self._client.get("sound.h0.val")
@@ -276,33 +275,11 @@ class NextionControllerAsync:
                 await self.set_island_text("")
                 self.island_touch = "page main"
                 # Envoyer un message au realtime client indiquant l'annulation de la recette
-                try:
-                    from __main__ import client  # On utilise le client défini globalement
-                except ImportError:
-                    client = None
-                if client and client.connection:
-                    print("Sending recipe cancellation message...")
-                    message_text = "[SYSTEM] Ceci est un message système: la recette a été annulée, l'utilisateur a fermé la fenètre de recette. Il n'en a probablement plus besoin."
-                    message_data = {
-                        "type": "conversation.item.create",
-                        "item": {
-                            "type": "message",
-                            "role": "user",
-                            "content": [
-                                {"type": "input_text", "text": message_text}
-                            ]
-                        }
-                    }
-                    await client.connection.send(message_data)
-                    client._append_message({
-                        "role": "user",
-                        "content": [
-                            {"type": "input_text", "text": message_text}
-                        ]
-                    })
-                    await client.connection.send({"type": "response.create"})
+                if self._voice_agent:
+                    print("[Nextion Touch] Sending recipe cancellation message to agent...")
+                    await self._voice_agent.send_text("[SYSTEM] This is a system message: The user cancelled the current recipe.")
                 else:
-                    print("[NextionController] Realtime client not available")
+                    print("[Nextion Touch] Warning: VoiceAgent not set, cannot send recipe cancellation message.")
 
     async def set_page(self, page_id):
         """
@@ -426,6 +403,12 @@ class NextionController:
             return future.result()
         except Exception as e:
             print(f"[NextionController] Error: {e}")
+
+    def set_voice_agent(self, agent: 'VoiceAgent'):
+        """Sets the VoiceAgent instance in the underlying async controller."""
+        # No need to run in loop, just set the attribute directly
+        self._async_controller.set_voice_agent(agent)
+        print("[NextionController] VoiceAgent instance set in async controller.")
 
     def connect(self):
         """Méthode synchrone pour établir la connexion avec l'écran Nextion."""

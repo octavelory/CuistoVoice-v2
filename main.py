@@ -138,15 +138,15 @@ async def main():
         porcupine_access_key=PICOVOICE_ACCESS_KEY,
         porcupine_keyword_paths=keyword_paths,
         porcupine_model_path=model_path,
-        porcupine_sensitivity=0.5, # Adjust sensitivity if needed
-        voice="ash", # Changed voice for variety, use "ash" or others as preferred
+        porcupine_sensitivity=0.9,
+        voice="ash",
         temperature=0.6,
         instructions=instructions,
-        turn_detection={"type": "semantic_vad", "eagerness": "medium"}, # Adjusted eagerness
+        turn_detection={"type": "semantic_vad", "eagerness": "medium"},
         tools = tools,
         tool_handlers=tool_handlers,
-        history_file="messages_history.json", # Pass history file path
-        nextion_controller = nextion_controller # Pass the Nextion controller instance
+        history_file="messages_history.json",
+        nextion_controller = nextion_controller # Pass controller instance to agent
     )
 
     # --- Link Agent Methods/Events via Callbacks ---
@@ -156,6 +156,15 @@ async def main():
     set_agent_set_music_flag_callback(agent.set_is_playing_music)
     set_agent_stop_event(agent.stop_playback_event) # Pass the agent's stop event
     print("Linked VoiceAgent methods and events to functions_utils via callbacks.")
+
+    # --- Link Agent to Nextion Controller ---
+    if nextion_controller:
+        # Check if it's the dummy or real controller; both should have the method
+        if hasattr(nextion_controller, 'set_voice_agent'):
+            nextion_controller.set_voice_agent(agent)
+            print("Linked VoiceAgent instance to NextionController.")
+        else:
+            print("Warning: Nextion controller does not have set_voice_agent method.")
 
     await agent.start()
 

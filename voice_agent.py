@@ -998,6 +998,43 @@ class VoiceAgent:
         self.is_playing_music = is_playing
         print(f"[Agent Callback] is_playing_music set to: {is_playing}")
 
+    async def simulate_wakeword_detection(self):
+        """Simulates a wake word detection, typically triggered externally (e.g., Nextion touch)."""
+        if not self.running:
+            print("[Simulate Wakeword] Agent not running.")
+            return
+
+        # Only simulate if currently waiting for wake word
+        if self._waiting_for_wakeword:
+            print("[Simulate Wakeword] Wake word simulated.")
+            # Display listening indicator on nextion
+            if self.nextion_controller:
+                # Use run_coroutine_threadsafe if called from non-async context,
+                # but here it's called from async _event_handler, so direct await is fine.
+                await self.nextion_controller._async_controller.is_listening(True) # Access async directly
+
+            if self.is_playing_music:
+                print("--- Interruption de la musique par simulation de mot-clé ---")
+                music_interrupt_event.set() # Signal playback thread to pause
+                self._pending_music_interrupt_check = True
+                self._interrupt_check_start_time = time.time()
+                print("Waiting 5s for speech before resuming music...")
+                self._waiting_for_wakeword = False
+                self._should_send_audio = True
+                print("En écoute (après interruption musique)...")
+            else:
+                # --- Wake word simulated without music ---
+                self._waiting_for_wakeword = False
+                self._should_send_audio = True
+                self._pending_non_music_wakeword_check = True # Start check
+                self._non_music_check_start_time = time.time() # Record time
+                print("En écoute (waiting 5s for speech confirmation)...")
+
+            # Clear buffer after wake word simulation? Optional.
+            # self._input_buffer.clear()
+        else:
+            print("[Simulate Wakeword] Already listening or processing, simulation ignored.")
+
 class AudioPlayerAsync:
     """Lecteur audio asynchrone pour lire les réponses audio."""
     
