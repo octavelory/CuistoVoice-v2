@@ -396,9 +396,6 @@ def format_duration(seconds):
     h, m = divmod(m, 60)
     return f"{h:d}:{m:02d}:{s:02d}"
 
-def play_music(search=None):
-    return {"status": "error", "message": "This feature is not available for now."}
-
 def get_shopping_list():
     shopping_list = read_shopping_list()
     display_shopping_list(shopping_list)
@@ -693,11 +690,26 @@ def _music_playback_cleanup(interrupted_final: bool):
              if _agent_reset_state_callback:
                  _agent_reset_state_callback() # Reset agent state
         else:
-            # If interrupted by wake word, the agent handles state via timeout/speech detection.
-            # Only reset the music flag here.
-            print("[Cleanup Callback] Playback interrupted by wake word. Agent manages state. Resetting music flag.")
+            # If interrupted by wake word or screen touch (simulated wake word).
+            print("[Cleanup Callback] Playback interrupted by user. Agent manages state. Resetting music flag and sending notification.")
             if _agent_set_music_flag_callback:
-                 _agent_set_music_flag_callback(False) # Reset agent's music flag
+                _agent_set_music_flag_callback(False) # Reset agent's music flag
+
+            # Send system message to agent about the interruption
+            if voice_agent_send_text:
+                message = "[SYSTEM] Music playback was interrupted by the user."
+                print(f"[Cleanup Callback] Sending system message: {message}")
+                # Schedule the async send_text function in the main loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(voice_agent_send_text(message))
+                except RuntimeError as e:
+                    print(f"[Cleanup Callback] Error getting running loop to send message: {e}")
+                except Exception as e:
+                     print(f"[Cleanup Callback] Error scheduling send_text: {e}")
+            else:
+                print("[Cleanup Callback] Warning: voice_agent_send_text not available, cannot notify agent of interruption.")
+            # DO NOT call _agent_reset_state_callback() here. The agent is handling the state transition.
 
         current_playback_thread = None # Clear the reference
         _playback_cleanup_scheduled = False # Mark cleanup as done
@@ -914,8 +926,9 @@ def play_music(search=None):
         current_playback_thread.start()
 
     # --- Return Immediately ---
-    start_message = f"Lecture de '{title}' par '{artist}' terminée. Durée: {format_duration(duration_seconds)}."
+    start_message = f"Starting playback of '{title}' by '{artist}'. Duration: {format_duration(duration_seconds)}."
     print(f"[Function: play_music] {start_message}")
+    # Return status success, the start message, and no_response_needed=True
     return {"status": "success", "message": start_message, "no_response_needed": True}
 
 # --- Add function to set the global stop event ---
