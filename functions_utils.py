@@ -78,20 +78,20 @@ recipe_schema = {
 }
 
 recipe_format = """
-Recette pour {num_people} personne(s)\r
-Temps de préparation: {time}\r
-Difficulté: {difficulty}\r
-\r
+Recette pour {num_people} personne(s)
+Temps de préparation: {time}
+Difficulté: {difficulty}
+
 Matériel nécessaire:
-\r
+
  - {materiel}
 
 Ingrédients:
-\r
+
  - {ingredients}
 
 Étapes:
-\r
+
 {etapes}
 """
 
@@ -485,10 +485,11 @@ def create_recipe(description = None, num_people = 1):
             num_people=num_people,
             time=recipe_data["time"],
             difficulty=recipe_data["difficulty"],
-            materiel="\n\n - ".join([f"{i+1}. {material}" for i, material in enumerate(recipe_data["materiel"])]).replace("\n", "\r\n"),
-            ingredients="\n\n - ".join([f"{i+1}. {ingredient}" for i, ingredient in enumerate(recipe_data["ingredients"])]).replace("\n", "\r\n"),
-            etapes="\n\n".join([f"{i+1}. {step}" for i, step in enumerate(recipe_data["steps"])]).replace("\n", "\r\n")
+            materiel="\n\n - ".join([f"{i+1}. {material}" for i, material in enumerate(recipe_data["materiel"])]),
+            ingredients="\n\n - ".join([f"{i+1}. {ingredient}" for i, ingredient in enumerate(recipe_data["ingredients"])]),
+            etapes="\n\n".join([f"{i+1}. {step}" for i, step in enumerate(recipe_data["steps"])])
         )
+        formatted_recipe = formatted_recipe.replace("\n", "\r\n")
         nextion_controller.set_text("slt0.txt", formatted_recipe)
         nextion_controller.run_command("slt0.val_y=0")
         nextion_controller.run_command(f"g0.txt=\"{recipe_data['title']}\"")
