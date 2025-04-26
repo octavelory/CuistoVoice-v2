@@ -1027,7 +1027,6 @@ class VoiceAgent:
             else:
                 print("[Simulate Wakeword] Warning: Agent stop event not available, cannot reliably stop music thread.")
 
-
         # 3. Simulate Wake Word Detection (Transition to Listening State)
         # This happens immediately after signaling stops.
         print("[Simulate Wakeword] Transitioning to listening state...")

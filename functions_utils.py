@@ -485,8 +485,8 @@ def create_recipe(description = None, num_people = 1):
             num_people=num_people,
             time=recipe_data["time"],
             difficulty=recipe_data["difficulty"],
-            materiel="\n - ".join(recipe_data["materiel"]),
-            ingredients="\n - ".join([f"{i+1}. {ingredient}" for i, ingredient in enumerate(recipe_data["ingredients"])]).replace("\n", "\r\n"),
+            materiel="\n\n - ".join([f"{i+1}. {material}" for i, material in enumerate(recipe_data["materiel"])]).replace("\n", "\r\n"),
+            ingredients="\n\n - ".join([f"{i+1}. {ingredient}" for i, ingredient in enumerate(recipe_data["ingredients"])]).replace("\n", "\r\n"),
             etapes="\n\n".join([f"{i+1}. {step}" for i, step in enumerate(recipe_data["steps"])]).replace("\n", "\r\n")
         )
         nextion_controller.set_text("slt0.txt", formatted_recipe)
