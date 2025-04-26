@@ -485,8 +485,8 @@ def create_recipe(description = None, num_people = 1):
             num_people=num_people,
             time=recipe_data["time"],
             difficulty=recipe_data["difficulty"],
-            materiel="\n\n - ".join([f"{i+1}. {material}" for i, material in enumerate(recipe_data["materiel"])]),
-            ingredients="\n\n - ".join([f"{i+1}. {ingredient}" for i, ingredient in enumerate(recipe_data["ingredients"])]),
+            materiel="\n - ".join([f"{material}" for i, material in enumerate(recipe_data["materiel"])]),
+            ingredients="\n - ".join([f"{ingredient}" for i, ingredient in enumerate(recipe_data["ingredients"])]),
             etapes="\n\n".join([f"{i+1}. {step}" for i, step in enumerate(recipe_data["steps"])])
         )
         formatted_recipe = formatted_recipe.replace("\n", "\r\n")
