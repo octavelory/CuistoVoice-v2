@@ -19,7 +19,7 @@ from pydub import AudioSegment
 
 # Import the event and the new resume signal function from functions_utils
 # Removed the try...except block to ensure proper import or raise error
-from functions_utils import music_interrupt_event
+from functions_utils import music_interrupt_event, agent_stop_event # Import agent_stop_event
 
 # Paramètres audio
 RECORDER_SAMPLE_RATE = 16000 # Default, will be updated by Porcupine init
@@ -1004,36 +1004,63 @@ class VoiceAgent:
             print("[Simulate Wakeword] Agent not running.")
             return
 
-        # Only simulate if currently waiting for wake word
-        if self._waiting_for_wakeword:
-            print("[Simulate Wakeword] Wake word simulated.")
-            # Display listening indicator on nextion
-            if self.nextion_controller:
-                # Use run_coroutine_threadsafe if called from non-async context,
-                # but here it's called from async _event_handler, so direct await is fine.
-                await self.nextion_controller._async_controller.is_listening(True) # Access async directly
+        print("[Simulate Wakeword] Triggered.")
 
-            if self.is_playing_music:
-                print("--- Interruption de la musique par simulation de mot-clé ---")
-                music_interrupt_event.set() # Signal playback thread to pause
-                self._pending_music_interrupt_check = True
-                self._interrupt_check_start_time = time.time()
-                print("Waiting 5s for speech before resuming music...")
-                self._waiting_for_wakeword = False
-                self._should_send_audio = True
-                print("En écoute (après interruption musique)...")
+        # 1. Stop Assistant Speech Playback
+        if self.audio_player.is_playing():
+            print("[Simulate Wakeword] Stopping assistant speech...")
+            self.audio_player.stop()
+            # Give a tiny moment for audio to potentially cut off
+            await asyncio.sleep(0.05)
+
+        # 2. Signal Music Playback to Stop (if playing)
+        music_was_signaled_to_stop = False
+        if self.is_playing_music:
+            print("[Simulate Wakeword] Signaling music playback to stop...")
+            music_interrupt_event.set()
+            # Use the globally set agent_stop_event (passed to the thread)
+            if agent_stop_event:
+                agent_stop_event.set() # Signal thread termination
+                music_was_signaled_to_stop = True
+                # Don't wait here, let it stop in the background.
+                # The cleanup callback will handle the is_playing_music flag reset.
             else:
-                # --- Wake word simulated without music ---
-                self._waiting_for_wakeword = False
-                self._should_send_audio = True
-                self._pending_non_music_wakeword_check = True # Start check
-                self._non_music_check_start_time = time.time() # Record time
-                print("En écoute (waiting 5s for speech confirmation)...")
+                print("[Simulate Wakeword] Warning: Agent stop event not available, cannot reliably stop music thread.")
 
-            # Clear buffer after wake word simulation? Optional.
-            # self._input_buffer.clear()
-        else:
-            print("[Simulate Wakeword] Already listening or processing, simulation ignored.")
+
+        # 3. Simulate Wake Word Detection (Transition to Listening State)
+        # This happens immediately after signaling stops.
+        print("[Simulate Wakeword] Transitioning to listening state...")
+
+        # Set listening indicator
+        if self.nextion_controller:
+            # Use run_coroutine_threadsafe if called from non-async context,
+            # but here it's called from async _event_handler, so direct await is fine.
+            # Ensure we access the async controller if nextion_controller is the sync wrapper
+            if hasattr(self.nextion_controller, '_async_controller'):
+                 await self.nextion_controller._async_controller.is_listening(True)
+            else: # Assume it's already the async controller or dummy
+                 try:
+                     await self.nextion_controller.is_listening(True)
+                 except AttributeError: # Handle dummy controller case
+                     self.nextion_controller.is_listening(True)
+
+
+        # Update agent state flags
+        self._waiting_for_wakeword = False
+        self._should_send_audio = True
+
+        # Start false positive check (non-music version)
+        self._pending_non_music_wakeword_check = True
+        self._non_music_check_start_time = time.time()
+        # Cancel any pending music interrupt check, as we are forcing listening now
+        self._pending_music_interrupt_check = False
+        self._interrupt_check_start_time = None
+
+        print("[Simulate Wakeword] Now listening (waiting 5s for speech confirmation)...")
+
+        # Clear Porcupine buffer? Optional.
+        # self._input_buffer.clear()
 
 class AudioPlayerAsync:
     """Lecteur audio asynchrone pour lire les réponses audio."""
@@ -1041,8 +1068,20 @@ class AudioPlayerAsync:
     def __init__(self):
         self.queue = []
         self.lock = threading.Lock()
-        # Ensure the OutputStream uses the correct OPENAI_SAMPLE_RATE (24kHz)
+        self.stream = None # Initialize stream as None
+        self.playing = False # Tracks if stream.start() has been called
+        self._frame_count = 0
+        self._init_stream() # Call initialization method
+
+    def _init_stream(self):
+        """Initializes or re-initializes the sounddevice OutputStream."""
+        if self.stream and not self.stream.closed:
+            try:
+                self.stream.close()
+            except Exception as e:
+                print(f"Error closing existing stream: {e}")
         try:
+            # Ensure the OutputStream uses the correct OPENAI_SAMPLE_RATE (24kHz)
             self.stream = sd.OutputStream(
                 callback=self.callback,
                 samplerate=OPENAI_SAMPLE_RATE, # Use 24kHz for playback
@@ -1050,12 +1089,12 @@ class AudioPlayerAsync:
                 dtype=np.int16,
                 blocksize=int(0.05 * OPENAI_SAMPLE_RATE), # Keep 50ms blocksize relative to 24kHz
             )
+            print("[AudioPlayer] OutputStream initialized.")
         except Exception as e:
             print(f"Erreur d'initialisation de sounddevice OutputStream: {e}")
+            self.stream = None # Ensure stream is None on failure
             # Fallback or re-raise depending on desired behavior
             raise
-        self.playing = False
-        self._frame_count = 0
 
     def callback(self, outdata, frames, time, status):
         with self.lock:
@@ -1097,25 +1136,59 @@ class AudioPlayerAsync:
             # Les bytes sont des données audio pcm16 mono, conversion en tableau numpy
             np_data = np.frombuffer(data, dtype=np.int16)
             self.queue.append(np_data)
-            if not self.playing:
+            # Start stream only if it's initialized and not already playing
+            if self.stream and not self.playing:
                 self.start()
 
     def start(self):
-        self.playing = True
-        self.stream.start()
+        if not self.stream:
+            print("[AudioPlayer] Cannot start, stream not initialized.")
+            return
+        if self.stream.closed:
+            print("[AudioPlayer] Stream closed, re-initializing...")
+            self._init_stream()
+            if not self.stream: # Check if re-init failed
+                 print("[AudioPlayer] Re-initialization failed, cannot start.")
+                 return
+
+        if not self.playing:
+            try:
+                self.stream.start()
+                self.playing = True
+                print("[AudioPlayer] Stream started.")
+            except Exception as e:
+                print(f"[AudioPlayer] Error starting stream: {e}")
+                self.playing = False # Ensure playing is false on error
 
     def stop(self):
-        """Stops the audio stream and clears the queue."""
-        self.playing = False
-        # Clear queue before stopping the stream to avoid callback issues
+        """Stops the audio stream immediately and clears the queue."""
+        if self.playing and self.stream and not self.stream.closed:
+            try:
+                self.stream.stop()
+                print("[AudioPlayer] Stream stopped.")
+            except Exception as e:
+                print(f"[AudioPlayer] Error stopping stream: {e}")
+        self.playing = False # Set playing to false regardless of stop success
+        # Clear queue after attempting to stop the stream
         with self.lock:
             self.queue = []
-        self.stream.stop()
+            print("[AudioPlayer] Queue cleared.")
+
+    def is_playing(self) -> bool:
+        """Checks if the audio player has data queued or the stream is active."""
+        with self.lock:
+            # Check if stream is active OR if there's data waiting in the queue
+            return self.playing or len(self.queue) > 0
 
     def terminate(self):
-        if self.playing:
-            self.stop()
-        self.stream.close()
+        self.stop() # Ensure stopped and queue cleared
+        if self.stream and not self.stream.closed:
+            try:
+                self.stream.close()
+                print("[AudioPlayer] Stream closed.")
+            except Exception as e:
+                print(f"[AudioPlayer] Error closing stream during terminate: {e}")
+        self.stream = None # Set stream to None after closing
 
 def audio_to_pcm16_base64(audio_bytes: bytes) -> bytes:
     """
