@@ -45,6 +45,7 @@ class VoiceAgent:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_handlers: Optional[Dict[str, Callable]] = None,
         voice: str = "ash",
+        speed: float = 1.0,
         instructions: str = "Tu es un assistant vocal. Réponds d'un ton enjoué et amical !",
         auto_reconnect: bool = True,
         turn_detection: Dict[str, Any] = {"type": "semantic_vad"},
@@ -83,6 +84,7 @@ class VoiceAgent:
         self.tools = tools if tools else []
         self.tool_handlers = tool_handlers if tool_handlers else {}
         self.voice = voice
+        self.speed = speed
         self.instructions = instructions
         self.auto_reconnect = auto_reconnect
         self.turn_detection = turn_detection
@@ -342,6 +344,7 @@ class VoiceAgent:
             # Configuration de la session avec les outils si définis
             session_config = {
                 "voice": self.voice,
+                "speed": self.speed,
                 "turn_detection": self.turn_detection,
                 "tools": self.tools,
                 "temperature": self.temperature,
