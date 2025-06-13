@@ -40,7 +40,7 @@ class VoiceAgent:
         porcupine_model_path: str = None,
         porcupine_sensitivity: float = 0.5,
         api_key: Optional[str] = None,
-        model: str = "gpt-4o-realtime-preview",
+        model: str = "gpt-4o-realtime-preview-2025-06-03",
         temperature: float = 0.6,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_handlers: Optional[Dict[str, Callable]] = None,
