@@ -140,7 +140,7 @@ async def main():
         porcupine_model_path=model_path,
         porcupine_sensitivity=0.9,
         voice="ash",
-        speed = 1.1,
+        speed = 1.05,
         temperature=0.6,
         instructions=instructions,
         turn_detection={"type": "semantic_vad", "eagerness": "medium"},
