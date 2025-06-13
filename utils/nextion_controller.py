@@ -252,6 +252,11 @@ class NextionControllerAsync:
                 else:
                     print("[Nextion Touch] Warning: VoiceAgent not set, cannot simulate wake word.")
                 pass
+            if data.page_id == 1 and data.component_id == 11:
+                # recette express
+                if self._voice_agent:
+                    print("[Nextion Touch] Sending express recipe request to agent...")
+                    await self._voice_agent.send_text("[SYSTEM] This is a system message: L'utilisateur a demandé une recette express.")
             if data.page_id == 6 and data.component_id == 5:
                 # si on ajuste le volume
                 volume = await self._client.get("sound.h0.val")
