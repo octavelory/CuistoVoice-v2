@@ -126,6 +126,15 @@ def get_config():
 def set_config(config):
     redis_client.set(CONFIG_KEY, json.dumps(config))
 
+def set_volume(volume):
+    if os.name == "nt":
+        # Windows does not support setting volume through Nextion
+        print(f"[NextionController] Volume set to {volume} (Windows, no action taken)")
+    else:
+        # For Raspberry Pi, we can set the volume using amixer
+        os.system(f"amixer -M -c 0 sset 'Speaker' 50%")
+        print(f"[NextionController] Volume set to {volume}%")
+
 class DummyNextionController:
     def connect(self):
         print("[DummyNextionController] connect called - no screen available")
@@ -247,8 +256,7 @@ class NextionControllerAsync:
                 # si on ajuste le volume
                 volume = await self._client.get("sound.h0.val")
                 if volume:
-                    #set_volume(int(volume))
-                    pass
+                    set_volume(int(volume))
             if data.page_id == 8 and data.component_id == 9:
                 # si on met a jour la configuration, on recupere la langue choisie et le nom de l'utilisateur et on met a jour la configuration
                 new_name = await self._client.get("config.t4.txt")
