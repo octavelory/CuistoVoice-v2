@@ -132,7 +132,7 @@ def set_volume(volume):
         print(f"[NextionController] Volume set to {volume} (Windows, no action taken)")
     else:
         # For Raspberry Pi, we can set the volume using amixer
-        os.system(f"amixer -M -c 0 sset 'Speaker' 50%")
+        os.system(f"amixer -M -c 0 sset 'Speaker' {volume}%")
         print(f"[NextionController] Volume set to {volume}%")
 
 class DummyNextionController:
