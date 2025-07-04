@@ -12,3 +12,4 @@ nextion
 deezer-downloader
 pyjwt
 cryptography
+dotenv

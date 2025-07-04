@@ -42,7 +42,7 @@ set_nextion_controller(nextion_controller)
 nextion_controller.connect()
 
 DEV_SERVER_URL = "http://localhost:3000"
-api_client = APIclient(base_url=DEV_SERVER_URL)
+api_client = APIclient()
 
 client_status = api_client.login(
     email=os.environ.get("CUISTOVOICE_EMAIL"),
