@@ -2,9 +2,11 @@ import asyncio
 import os
 import json
 import datetime
+from dotenv import load_dotenv
 from voice_agent import VoiceAgent
 from utils.nextion_controller import NextionController, DummyNextionController
 from utils.api_client import APIclient
+from utils.env_utils import save_credentials_to_env_file, load_credentials_from_env_file
 from functions_utils import (
    set_nextion_controller,
    get_tool_handlers,
@@ -15,6 +17,9 @@ from functions_utils import (
    set_agent_set_music_flag_callback,
    set_agent_stop_event
 )
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- Nextion Setup ---
 if os.name == "nt":
@@ -34,21 +39,29 @@ else:
 ### set nextion controller in functions_utils
 set_nextion_controller(nextion_controller)
 
+nextion_controller.connect()
+
 DEV_SERVER_URL = "http://localhost:3000"
 api_client = APIclient(base_url=DEV_SERVER_URL)
 
-if not os.environ.get("CUISTOVOICE_EMAIL") or not os.environ.get("CUISTOVOICE_PASSWORD"):
+client_status = api_client.login(
+    email=os.environ.get("CUISTOVOICE_EMAIL"),
+    password=os.environ.get("CUISTOVOICE_PASSWORD")
+)
+
+while not client_status:
+    print("[DEBUG] Login failed, retrying...")
     email, password = nextion_controller.ask_login()
-    while not api_client.login(email=email, password=password):
-        print("[DEBUG] Login failed, retrying...")
-        email, password = nextion_controller.ask_login()
-else:
-    database_content = api_client.get_memories()
-    user_config = api_client.get_config()
-    if not database_content or len(database_content) == 0:
-        database_content = "La base de données est actuellement vide. Tu peux rajouter des données en utilisant la fonction correspondante."
-    if not user_config or len(user_config) == 0:
-        nextion_controller.initiate_config()
+    save_credentials_to_env_file(email, password)
+    load_dotenv()
+    client_status = api_client.login(email=email, password=password)
+
+database_content = api_client.get_memories()
+user_config = api_client.get_config()
+if not database_content or len(database_content) == 0:
+    database_content = "La base de données est actuellement vide. Tu peux rajouter des données en utilisant la fonction correspondante."
+if not user_config or len(user_config) == 0:
+    nextion_controller.initiate_config()
 
 print("[DEBUG] User configuration loaded:", user_config)
 print("[DEBUG] Database content loaded:", database_content)

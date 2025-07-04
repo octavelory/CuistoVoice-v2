@@ -18,6 +18,8 @@ realtimesst.log
 config.ini
 deezer-downloader.ini
 .cache
+.env
+.env.local
 
 data/shopping_list.json
 data/database.json
