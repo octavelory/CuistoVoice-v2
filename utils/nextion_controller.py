@@ -448,6 +448,7 @@ class NextionControllerAsync:
         self.password = None
         while self.email is None and self.password is None:
             await asyncio.sleep(0.1)
+        print(self.email, self.password)
         if self.email and self.password:
             print(f"[NextionControllerAsync] User logged in with email: {self.email}")
             return self.email, self.password
