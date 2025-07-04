@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 from utils.wireless_utils import scan_networks, connect_wifi
 import os
+import re
 from typing import Optional, TYPE_CHECKING # Add Optional and TYPE_CHECKING for type hinting
 
 if TYPE_CHECKING:
@@ -83,7 +84,12 @@ touch_events = {
     (10, 5): "page settings",
 
     # page content
-    (12, 4): "page main"
+    (12, 4): "page main",
+
+    #### Login steps pages ####
+    (3, 13): "page login_step_2",
+    (4, 14): "page login_step_3",
+    (4, 15): "page boot",
 }
 
 island_icons = {
@@ -101,7 +107,7 @@ possible_languages = ["Français", "English", "Español", "Deutsch", "Italiano",
 redis_client = redis.Redis(
     host='grateful-owl-12745.upstash.io',
     port=6379,
-    password=os.environ.get("CUISTOVOICE_DATABASE_PASSWORD", "ATHJAAIjcDFlNDc5YmRlNjM5MWQ0ZmY5YTBkNzA5YmNlZDJiMmZlNHAxMA"),
+    password=os.environ.get("CUISTOVOICE_DATABASE_PASSWORD"),
     ssl=True
 )
 MEMORY_KEY = "cuistovoice:database"
@@ -154,6 +160,22 @@ class DummyNextionController:
         print(f"[DummyNextionController] set_island_icon called with: {icon_name}")
     def set_island_touch(self, command: str):
         print(f"[DummyNextionController] set_island_touch called with: {command}")
+    def initiate_config(self):
+        print("[DummyNextionController] initiate_config called - no screen available")
+        # Simulate setting default config
+        default_config = {
+            "name": "Octave",
+            "mainLanguage": "Français",
+            "location": "Paris"
+        }
+        set_config(default_config)
+        print("[DummyNextionController] Default configuration set.")
+    def ask_login(self):
+        print("[DummyNextionController] ask_login called - no screen available")
+        # Simulate asking for login credentials
+        email = input("Enter your email: ")
+        password = input("Enter your password: ")
+        return email, password
     def close(self):
         print("[DummyNextionController] close called")
 
@@ -176,6 +198,8 @@ class NextionControllerAsync:
         self.island_touch = ""
 
         self.selected_ssid = None
+        self.email = os.environ.get("CUISTOVOICE_EMAIL", None)
+        self.password = os.environ.get("CUISTOVOICE_PASSWORD", None)
 
     async def connect(self):
         """
@@ -295,6 +319,24 @@ class NextionControllerAsync:
                     await self._voice_agent.send_text("[SYSTEM] This is a system message: The user cancelled the current recipe.")
                 else:
                     print("[Nextion Touch] Warning: VoiceAgent not set, cannot send recipe cancellation message.")
+            if data.page_id == 14 and data.component_id == 4:
+                # email has been entered in login_step_2
+                self.email = await self._client.get("login_step_2.t5.txt")
+                # check if email is valid
+                if not re.match(r"[^@]+@[^@]+\.[^@]+", self.email):
+                    print("[NextionControllerAsync] Invalid email format.")
+                    await self._client.command('login_step_2.t5.txt="Email invalide"')
+                    await self.set_page("login_step_2")
+                    return
+            if data.page_id == 15 and data.component_id == 4:
+                # password has been entered in login_step_3
+                self.password = await self._client.get("login_step_3.t5.txt")
+                # check if password is valid (not empty)
+                if not self.password or len(self.password) < 6:
+                    print("[NextionControllerAsync] Invalid password format.")
+                    await self._client.command('login_step_3.t5.txt="Mot de passe invalide"')
+                    await self.set_page("login_step_3")
+                    return
 
     async def set_page(self, page_id):
         """
@@ -392,6 +434,22 @@ class NextionControllerAsync:
             except Exception as e:
                 continue
 
+    async def ask_login(self):
+        """
+        Demande à l'utilisateur de saisir ses identifiants de connexion et retourne l'email et le mot de passe.
+        """
+        if not self._client:
+            print("[NextionControllerAsync] Warning: Client not connected, cannot ask for login.")
+            return None, None
+        await self.set_page("login_step_1")
+        self.email = None
+        self.password = None
+        while self.email is None and self.password is None:
+            await asyncio.sleep(0.1)  # Wait for user input
+        if self.email and self.password:
+            print(f"[NextionControllerAsync] User logged in with email: {self.email}")
+            return self.email, self.password
+
 class NextionController:
     """
     Classe synchrone pour la gestion de l'écran Nextion.
@@ -460,6 +518,12 @@ class NextionController:
     # Synchronous wrapper for the async set_global_value method.
     def set_global_value(self, component: str, value: str):
         return self._run_sync(self._async_controller.set_global_value(component, value))
+    
+    def initiate_config(self):
+        return self._run_sync(self._async_controller.run_command("page config_step_1"))
+    
+    def ask_login(self):
+        return self._run_sync(self._async_controller.ask_login())
 
     def close(self):
         """Arrête proprement l'event loop et le thread associé."""

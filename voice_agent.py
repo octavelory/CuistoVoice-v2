@@ -4,8 +4,11 @@ import asyncio
 import base64
 import io
 import json
+import jwt
 import os
+from pathlib import Path
 import threading # Added
+import requests
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
@@ -39,16 +42,16 @@ class VoiceAgent:
         porcupine_keyword_paths: List[str],
         porcupine_model_path: str = None,
         porcupine_sensitivity: float = 0.5,
-        api_key: Optional[str] = None,
-        model: str = "gpt-4o-realtime-preview-2025-06-03",
+        model: str = "gpt-4o-realtime-preview",
         temperature: float = 0.6,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_handlers: Optional[Dict[str, Callable]] = None,
         voice: str = "ash",
         speed: float = 1.0,
-        instructions: str = "Tu es un assistant vocal. Réponds d'un ton enjoué et amical !",
+        instructions: str = "Réponds d'un ton enjoué et amical !",
         auto_reconnect: bool = True,
         turn_detection: Dict[str, Any] = {"type": "semantic_vad"},
+        noise_reduction: str = "far_field",  # Added noise reduction option
         on_response_start: Optional[Callable] = None,
         on_response_done: Optional[Callable] = None,
         on_transcript: Optional[Callable[[str], None]] = None,
@@ -58,27 +61,12 @@ class VoiceAgent:
     ):
         """
         Initialise un agent vocal.
-
-        Args:
-            porcupine_access_key: Clé d'accès pour l'API Picovoice Porcupine.
-            porcupine_keyword_paths: Liste des chemins vers les fichiers de mots-clés Porcupine (.ppn).
-            porcupine_sensitivity: Sensibilité de détection du mot-clé (0.0 à 1.0).
-            api_key: Clé API OpenAI. Si None, utilise la variable d'environnement OPENAI_API_KEY.
-            model: Modèle à utiliser.
-            voice: Voix à utiliser pour la réponse.
-            auto_reconnect: Reconnexion automatique en cas d'erreur.
-            turn_detection: Configuration de la détection de tour de parole.
-            on_response_start: Fonction appelée au début d'une réponse.
-            on_response_done: Fonction appelée à la fin d'une réponse.
-            on_transcript: Fonction appelée à chaque mise à jour de la transcription.
-            on_error: Fonction appelée en cas d'erreur.
         """
         if not porcupine_access_key:
             raise ValueError("Porcupine Access Key is required.")
         if not porcupine_keyword_paths:
             raise ValueError("Porcupine keyword paths are required.")
 
-        self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
         self.temperature = temperature
         self.tools = tools if tools else []
@@ -88,6 +76,7 @@ class VoiceAgent:
         self.instructions = instructions
         self.auto_reconnect = auto_reconnect
         self.turn_detection = turn_detection
+        self.noise_reduction = noise_reduction
         self.nextion_controller = nextion_controller
         
         # Callbacks
@@ -179,7 +168,7 @@ class VoiceAgent:
         if len(self.tools) != len(self.tool_handlers):
             raise ValueError("tools and tool_handlers must have the same length and be non-empty.")
 
-        self.history_file = history_file # Added
+        self.history_file = history_file
 
     def _load_history(self):
         """Charge l'historique depuis le fichier JSON."""
@@ -199,7 +188,6 @@ class VoiceAgent:
                 json.dump(self.messages_history, f, indent=4, ensure_ascii=False)
         except Exception as e:
             print(f"Erreur lors de la sauvegarde de l'historique dans {self.history_file}: {e}")
-
 
     async def start(self):
         """Démarre l'agent vocal et la détection de mot-clé."""
@@ -338,6 +326,7 @@ class VoiceAgent:
                 
     async def _connect_and_process_events(self):
         """Établit une connexion, injecte l'historique si nécessaire, et traite les événements."""
+        self.client = AsyncOpenAI(api_key=_get_ephemeral_key(model=self.model, session={}))
         async with self.client.beta.realtime.connect(model=self.model) as conn:
             self.connection = conn
             
@@ -350,6 +339,9 @@ class VoiceAgent:
                 "temperature": self.temperature,
                 "instructions": self.instructions,
             }
+
+            if self.noise_reduction:
+                session_config["input_audio_noise_reduction"] = {"type": self.noise_reduction}
 
             await conn.session.update(session=session_config)
             print("Session initialisée, en attente de la confirmation...")
@@ -1191,6 +1183,54 @@ class AudioPlayerAsync:
             except Exception as e:
                 print(f"[AudioPlayer] Error closing stream during terminate: {e}")
         self.stream = None # Set stream to None after closing
+
+def _read_cpu_serial_number():
+    try:
+        with open("/proc/cpuinfo", "r") as f:
+            for line in f:
+                if line.startswith("Serial"):
+                    return line.split(":")[1].strip()
+    except Exception as e:
+        print(f"Erreur lors de la lecture du numéro de série CPU: {e}")
+    return "unknown"
+
+def _get_ephemeral_key(session, model="gpt-4o-realtime-preview"):
+    private_key_path = Path("device_private.key")
+    if not private_key_path.exists():
+        print("Private key file not found!")
+        return None
+    with open(private_key_path, "r") as f:
+        private_key = f.read()
+
+    payload = {
+        "iss": f"cuistovoice-{_read_cpu_serial_number()}",
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 60
+    }
+    token = jwt.encode(payload, private_key, algorithm="RS256")
+
+    # 3. Prepare request
+    session["model"] = model
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(
+            "http://localhost:3000/api/temp_token",
+            json=session,
+            headers=headers
+        )
+    except requests.RequestException as e:
+        print(f"Erreur lors de la requête pour la clé éphémère: {e}")
+        return None
+
+    if response.status_code == 200:
+        return response.json().get("ephemeral_key")
+    else:
+        print(f"Erreur lors de la récupération de la clé éphémère: {response.text}")
+        return None
 
 def audio_to_pcm16_base64(audio_bytes: bytes) -> bytes:
     """

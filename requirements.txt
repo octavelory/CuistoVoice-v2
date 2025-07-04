@@ -8,6 +8,7 @@ pvporcupine
 pvrecorder
 requests
 bs4
-redis
 nextion
 deezer-downloader
+pyjwt
+cryptography

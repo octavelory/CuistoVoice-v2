@@ -22,11 +22,10 @@ openai_client = OpenAI()
 redis_client = redis.Redis(
     host='grateful-owl-12745.upstash.io',
     port=6379,
-    password=os.environ.get("CUISTOVOICE_DATABASE_PASSWORD", "ATHJAAIjcDFlNDc5YmRlNjM5MWQ0ZmY5YTBkNzA5YmNlZDJiMmZlNHAxMA"),
+    password=os.environ.get("CUISTOVOICE_DATABASE_PASSWORD"),
     ssl=True
 )
 
-# Clés utilisées pour stocker les données
 MEMORY_KEY = "cuistovoice:database"
 MAIN_CONFIG_KEY = "cuistovoice:main_config"
 SHOPPING_LIST_KEY = "cuistovoice:shopping_list"
@@ -460,7 +459,7 @@ def create_recipe(description = None, num_people = 1):
     data = read_memories()
     try:
         response = openai_client.chat.completions.create(
-            model = "gpt-4o",
+            model = "gpt-4.1",
             temperature = 0.1,
             response_format = {"type": "json_schema", "json_schema": recipe_schema},
             messages = [

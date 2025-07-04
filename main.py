@@ -1,67 +1,20 @@
 import asyncio
 import os
 import json
-import redis
 import datetime
 from voice_agent import VoiceAgent
 from utils.nextion_controller import NextionController, DummyNextionController
+from utils.api_client import APIclient
 from functions_utils import (
    set_nextion_controller,
    get_tool_handlers,
    set_voice_agent_send_text, # For timers
    cancel_all_timers,
-   # --- Add new callback setters ---
    set_agent_pause_listening_callback,
    set_agent_reset_state_callback,
    set_agent_set_music_flag_callback,
-   set_agent_stop_event # Import the new setter
-   # --- End new callback setters ---
+   set_agent_stop_event
 )
-# Import SongManager to potentially initialize it here if desired
-# from utils.song_manager import SongManager
-
-# --- Configuration Redis ---
-redis_client = redis.Redis(
-    host='grateful-owl-12745.upstash.io',
-    port=6379,
-    password=os.environ.get("CUISTOVOICE_DATABASE_PASSWORD", "ATHJAAIjcDFlNDc5YmRlNjM5MWQ0ZmY5YTBkNzA5YmNlZDJiMmZlNHAxMA"),
-    ssl=True
-)
-
-MEMORY_KEY = "cuistovoice:database"
-SHOPPING_LIST_KEY = "cuistovoice:shopping_list"
-CONFIG_KEY = "cuistovoice:main_config"
-TIMERS_KEY = "cuistovoice:timers"
-
-redis_client.set(TIMERS_KEY, json.dumps([]))
-
-db_str = redis_client.get(MEMORY_KEY)
-if db_str:
-    database_content = json.loads(db_str) or {}
-    if len(database_content) == 0:
-        database_content = "Database is empty for now. You can add memories using the 'add_memory' tool."
-else:
-    database_content = "Database is empty for now. You can add memories using the 'add_memory' tool."
-
-# on recupere le nom d'utilisateur
-config_str = redis_client.get(CONFIG_KEY)
-if config_str:
-    config = json.loads(config_str)
-    username = config.get("name", "Octave")
-else:
-    username = "Octave"
-
-# On charge les instructions (prompt system)
-with open('data/system_prompt.txt', 'r', encoding="utf-8") as file:
-    instructions = file.read()
-    instructions = instructions.format(
-        database_content=database_content,
-        time_info=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        username=username
-    )
-
-with open("messages_history.json", "w", encoding="utf-8") as f:
-    json.dump([], f)
 
 # --- Nextion Setup ---
 if os.name == "nt":
@@ -80,6 +33,36 @@ else:
 
 ### set nextion controller in functions_utils
 set_nextion_controller(nextion_controller)
+
+DEV_SERVER_URL = "http://localhost:3000"
+api_client = APIclient(base_url=DEV_SERVER_URL)
+
+if not os.environ.get("CUISTOVOICE_EMAIL") or not os.environ.get("CUISTOVOICE_PASSWORD"):
+    email, password = nextion_controller.ask_login()
+    while not api_client.login(email=email, password=password):
+        print("[DEBUG] Login failed, retrying...")
+        email, password = nextion_controller.ask_login()
+else:
+    database_content = api_client.get_memories()
+    user_config = api_client.get_config()
+    if not database_content or len(database_content) == 0:
+        database_content = "La base de données est actuellement vide. Tu peux rajouter des données en utilisant la fonction correspondante."
+    if not user_config or len(user_config) == 0:
+        nextion_controller.initiate_config()
+
+print("[DEBUG] User configuration loaded:", user_config)
+print("[DEBUG] Database content loaded:", database_content)
+
+with open('data/system_prompt.txt', 'r', encoding="utf-8") as file:
+    instructions = file.read()
+    instructions = instructions.format(
+        database_content=database_content,
+        time_info=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        username=user_config.get("name"),
+    )
+
+with open("messages_history.json", "w", encoding="utf-8") as f:
+    json.dump([], f)
 
 # --- Clear History File ---
 try:
@@ -144,6 +127,7 @@ async def main():
         temperature=0.6,
         instructions=instructions,
         turn_detection={"type": "semantic_vad", "eagerness": "medium"},
+        noise_reduction="far_field",
         tools = tools,
         tool_handlers=tool_handlers,
         history_file="messages_history.json",

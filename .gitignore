@@ -7,7 +7,7 @@ utils/__pycache__
 /yank
 /cache
 
-nextion_gui/cuistovoice_interface.tft
+cuistovoice_interface.tft
 
 database.json
 tmp_commands.txt
@@ -22,4 +22,7 @@ deezer-downloader.ini
 data/shopping_list.json
 data/database.json
 data/main_config.json
-message_history.json
+messages_history.json
+
+device_private.key
+device_public.key
