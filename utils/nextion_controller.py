@@ -4,13 +4,13 @@
 from nextion import Nextion, EventType
 import asyncio
 import threading
-import redis
 import json
 from datetime import datetime
 from utils.wireless_utils import scan_networks, connect_wifi
 import os
 import re
 from typing import Optional, TYPE_CHECKING # Add Optional and TYPE_CHECKING for type hinting
+from utils.api_client import api_client
 
 if TYPE_CHECKING:
     # Import VoiceAgent only for type checking to avoid circular imports
@@ -103,35 +103,6 @@ island_icons = {
 }
 possible_languages = ["Français", "English", "Español", "Deutsch", "Italiano", "Português", "Русский", "العربية", "中文", "日本語"]
 
-# Connexion Redis pour la lecture de la database
-redis_client = redis.Redis(
-    host='grateful-owl-12745.upstash.io',
-    port=6379,
-    password=os.environ.get("CUISTOVOICE_DATABASE_PASSWORD"),
-    ssl=True
-)
-MEMORY_KEY = "cuistovoice:database"
-CONFIG_KEY = "cuistovoice:main_config"
-
-def get_memory():
-    db_str = redis_client.get(MEMORY_KEY)
-    if db_str:
-        database_content = json.loads(db_str) or {}
-        if len(database_content) == 0:
-            return None
-        # database content looks like this: { "zS832txvud": { "title": "Plat préféré", "content": "La pizza", "added": "2025-02-09 12:50:35" }, "U3cZrSgcQm": { "title": "Allergie", "content": "Produits laitiers", "added": "2025-02-19 13:10:36" }, "tdlhTKYCRO": { "title": "Anniversaire", "content": "20 mai", "added": "2025-02-22 12:39:03" }, "CmaChXtMRW": { "title": "Présentation au Musée des Arts et Métiers", "content": "Octave doit me présenter au Musée des Arts et Métiers le dimanche 2 mars 2025.", "added": "2025-02-27 18:18:36" }, "FblKOooaJR": { "title": "Goûts musicaux", "content": "Octave aime la chanson 'Memories' de Maroon 5.", "added": "2025-02-28 14:03:45" } }
-        return database_content
-
-def get_config():
-    config_str = redis_client.get(CONFIG_KEY)
-    if config_str:
-        # config looks like this: { "name": "Octave", "mainLanguage": "Français", "additionalInfo": [] }
-        return json.loads(config_str)
-    return None
-
-def set_config(config):
-    redis_client.set(CONFIG_KEY, json.dumps(config))
-
 def set_volume(volume):
     if os.name == "nt":
         # Windows does not support setting volume through Nextion
@@ -168,7 +139,11 @@ class DummyNextionController:
             "mainLanguage": "Français",
             "location": "Paris"
         }
-        set_config(default_config)
+        api_client.update_config(
+            name=default_config["name"],
+            main_language=default_config["mainLanguage"],
+            location=default_config["location"]
+        )
         print("[DummyNextionController] Default configuration set.")
     def ask_login(self):
         print("[DummyNextionController] ask_login called - no screen available")
@@ -250,7 +225,7 @@ class NextionControllerAsync:
                     wifi_connections = "\r\n".join([f"{net['SSID']} | ({net['Quality']}%) | {net['Encryption']}" for net in scan_networks()[:10]])
                     await self.run_command(f'wifi.select0.path="{wifi_connections}"')
                 if self.current_page == "memory":
-                    current_memory = get_memory()
+                    current_memory = api_client.get_memories()
                     if current_memory:
                         formatted_memories = "\r\n\r\n".join([f"{memory['title']} : {memory['content']}" for memory in current_memory.values()])
                         await self.run_command("memory.t1.aph=0")
@@ -259,7 +234,7 @@ class NextionControllerAsync:
                         await self.run_command("memory.t1.aph=127")
                         await self.run_command("memory.slt0.txt=\"\"")
                 if self.current_page == "config":
-                    config_str = redis_client.get(CONFIG_KEY)
+                    config_str = api_client.get_config(force_refresh=True)
                     if config_str:
                         config = json.loads(config_str)
                         await self.run_command(f'config.t4.txt="{config["name"]}"')
@@ -292,10 +267,14 @@ class NextionControllerAsync:
                 # si on met a jour la configuration, on recupere la langue choisie et le nom de l'utilisateur et on met a jour la configuration
                 new_name = await self._client.get("config.t4.txt")
                 new_language = possible_languages[int(await self._client.get("config.cb0.val"))]
-                config = get_config()
+                config = api_client.get_config(force_refresh=True)
                 config["name"] = new_name
                 config["mainLanguage"] = new_language
-                set_config(config)
+                api_client.update_config(
+                    name=config["name"],
+                    main_language=config["mainLanguage"],
+                    location=config["location"]
+                )
             if data.page_id == 9 and data.component_id == 5: # si on clique sur un réseau WiFi
                 self.selected_ssid = await self._client.get("wifi.select0.txt")
                 # only get the ssid not the quality and encryption

@@ -1209,7 +1209,6 @@ def _get_ephemeral_key(session, model="gpt-4o-realtime-preview"):
     }
     token = jwt.encode(payload, private_key, algorithm="RS256")
 
-    # 3. Prepare request
     session["model"] = model
     headers = {
         "Authorization": f"Bearer {token}",
@@ -1218,7 +1217,7 @@ def _get_ephemeral_key(session, model="gpt-4o-realtime-preview"):
 
     try:
         response = requests.post(
-            "http://localhost:3000/api/temp_token",
+            os.environ.get("BASE_URL", "http://localhost:3000") + "/api/temp_token",
             json=session,
             headers=headers
         )
@@ -1244,4 +1243,4 @@ def audio_to_pcm16_base64(audio_bytes: bytes) -> bytes:
         return base64.b64encode(pcm_audio.raw_data)
     except Exception as e:
         print(f"Erreur lors de la conversion audio en base64 PCM: {e}")
-        return b"" # Return empty bytes on error
+        return b""

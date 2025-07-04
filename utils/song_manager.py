@@ -7,7 +7,6 @@ import os
 import concurrent.futures
 import logging
 
-# Setup basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class SongManager:

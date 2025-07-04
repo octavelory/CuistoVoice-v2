@@ -15,21 +15,9 @@ from pydub import AudioSegment # Added
 from openai import OpenAI
 from utils.song_manager import SongManager # Added
 from typing import Optional, Callable, Any # Added Any
+from utils.api_client import api_client
 
 openai_client = OpenAI()
-
-# Connexion Redis sur Upstash
-redis_client = redis.Redis(
-    host='grateful-owl-12745.upstash.io',
-    port=6379,
-    password=os.environ.get("CUISTOVOICE_DATABASE_PASSWORD"),
-    ssl=True
-)
-
-MEMORY_KEY = "cuistovoice:database"
-MAIN_CONFIG_KEY = "cuistovoice:main_config"
-SHOPPING_LIST_KEY = "cuistovoice:shopping_list"
-TIMERS_KEY = "cuistovoice:timers"
 
 recipe_schema = {
     "name": "recette_de_cuisine",
@@ -94,32 +82,6 @@ Ingrédients:
 {etapes}
 """
 
-# Fonctions utilitaires pour les mémoires
-def read_memories():
-    data_str = redis_client.get(MEMORY_KEY)
-    if data_str:
-        return json.loads(data_str)
-    return {}
-
-def write_memories(data):
-    redis_client.set(MEMORY_KEY, json.dumps(data))
-
-# Fonctions utilitaires pour la shopping list
-def read_shopping_list():
-    data_str = redis_client.get(SHOPPING_LIST_KEY)
-    if data_str:
-        return json.loads(data_str)
-    return {}
-
-def write_shopping_list(data):
-    redis_client.set(SHOPPING_LIST_KEY, json.dumps(data))
-
-def read_location():
-    data_str = redis_client.get(MAIN_CONFIG_KEY)
-    if data_str:
-        data = json.loads(data_str)
-        return data.get("location", None)
-    return None
 # ---------------------------------------------------------------------------
 # NEXTION / AGENT CALLBACKS / GLOBALS
 # ---------------------------------------------------------------------------
@@ -226,14 +188,15 @@ def add_timer(time_in_seconds: int = None, timer_name: str = None):
 
     # Create and schedule the timer task
     task = asyncio.create_task(_timer_task(timer_id, time_in_seconds, timer_name))
+    api_timer_id = api_client.add_timer(name=timer_name, duration_seconds=time_in_seconds).get("timer").get("id")
 
     active_timers[timer_id] = {
         "task": task,
         "name": timer_name,
         "duration": time_in_seconds,
-        "start_time": start_time
+        "start_time": start_time,
+        "api_id": api_timer_id
     }
-
     return {"status": "success", "message": f"Timer '{timer_name}' started for {time_in_seconds} seconds.", "timer_id": timer_id}
 
 def edit_timer(timer_id: str = None, new_time_in_seconds: int = None, new_timer_name: str = None):
@@ -253,6 +216,7 @@ def edit_timer(timer_id: str = None, new_time_in_seconds: int = None, new_timer_
     # Cancel the old task
     print(f"Cancelling old timer task for '{old_name}' (ID: {timer_id}) for edit.")
     old_task.cancel()
+    api_client.delete_timer(timer_id=old_timer_info["api_id"])  # Cancel via API
     # Note: The cancellation cleanup happens within _timer_task or here if needed immediately
     if timer_id in active_timers: # Check again in case cancellation was instant
         del active_timers[timer_id]
@@ -282,6 +246,7 @@ def delete_timer(timer_id: str = None):
 
     print(f"Cancelling timer '{name}' (ID: {timer_id}).")
     task.cancel()
+    api_client.delete_timer(timer_id=timer_info["api_id"])  # Cancel via API
     # Cleanup might happen in the task's exception handler, or force remove here:
     if timer_id in active_timers:
         del active_timers[timer_id]
@@ -300,6 +265,7 @@ def cancel_all_timers():
                 # del active_timers[timer_id] # Let the task handler remove it
             except Exception as e:
                 print(f"Error cancelling timer {timer_id}: {e}")
+    api_client.clear_all_timers()  # Clear all timers via API
     # active_timers.clear() # Clear remaining just in case
     print(f"Cancelled {len(timer_ids)} timer(s).")
 
@@ -318,7 +284,7 @@ def google_search(query=None):
                 "type": "web_search_preview",
                 "user_location": {
                     "type": "approximate",
-                    "city": read_location(),
+                    "city": api_client.location,
                 }
             }],
             tool_choice={"type": "web_search_preview"},
@@ -354,36 +320,36 @@ def calculate(expression=None):
 def add_memory(title=None, content=None):
     if title is None or content is None:
         return {"status": "error", "message": "Title or content is missing."}
-    data = read_memories()
+    data = api_client.get_memories()
     mem_id = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
     while mem_id in data:
         mem_id = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
     data[mem_id] = {"title": title, "content": content, "added": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-    write_memories(data)
+    api_client.add_memory(title=title, content=content, memory_id=mem_id)
     return {"status": "success", "message": f"Memory with title '{title}' added successfully.", "memory_id": mem_id, "updated_database_content": data}
 
 def delete_memory(memory_id=None):
     if memory_id is None:
         return {"status": "error", "message": "Memory ID is missing."}
-    data = read_memories()
+    data = api_client.get_memories()
     if memory_id not in data:
         return {"status": "error", "message": "Memory ID not found in the database! The memory has not been updated. You can retry with the correct memory ID."}
     title = data[memory_id]["title"]
     del data[memory_id]
-    write_memories(data)
+    api_client.delete_memory(memory_id=memory_id)
     return {"status": "success", "message": f"Memory with title '{title}' deleted successfully.", "updated_database_content": data}
 
 def edit_memory(memory_id=None, new_title=None, new_content=None):
     if memory_id is None:
         return {"status": "error", "message": "Memory ID is missing."}
-    data = read_memories()
+    data = api_client.get_memories()
     if memory_id not in data:
         return {"status": "error", "message": "Memory ID not found."}
     if new_title is not None:
         data[memory_id]["title"] = new_title
     if new_content is not None:
         data[memory_id]["content"] = new_content
-    write_memories(data)
+    api_client.edit_memory(memory_id=memory_id, title=data[memory_id]["title"], content=data[memory_id]["content"])
     return {"status": "success", "message": f"Memory with ID '{memory_id}' edited successfully.", "updated_database_content": data}
 
 # Global controller for music playback state.
@@ -396,36 +362,36 @@ def format_duration(seconds):
     return f"{h:d}:{m:02d}:{s:02d}"
 
 def get_shopping_list():
-    shopping_list = read_shopping_list()
+    shopping_list = api_client.get_shopping_list()
     display_shopping_list(shopping_list)
     return {"status": "success", "shopping_list": shopping_list}
 
 def add_to_shopping_list(item=None, quantity=1, additional_info=None):
     if item is None or quantity is None:
         return {"status": "error", "message": "Item or quantity is missing."}
-    data = read_shopping_list()
+    data = api_client.get_shopping_list()
     if item in data:
         return {"status": "error", "message": "Item already in the shopping list."}
     data[str(item)] = {"quantity": str(quantity), "additional_info": str(additional_info)}
-    write_shopping_list(data)
+    api_client.add_to_shopping_list(item=str(item), quantity=str(quantity), additional_info=str(additional_info))
     display_shopping_list(data)
     return {"status": "success", "message": f"Item '{item}' added to the shopping list.", "updated_shopping_list": data}
 
 def remove_from_shopping_list(item=None):
     if item is None:
         return {"status": "error", "message": "Item is missing."}
-    data = read_shopping_list()
+    data = api_client.get_shopping_list()
     if item not in data:
         return {"status": "error", "message": "Item not found in the shopping list."}
     del data[str(item)]
-    write_shopping_list(data)
+    api_client.remove_from_shopping_list(item=str(item))
     display_shopping_list(data)
     return {"status": "success", "message": f"Item '{item}' removed from the shopping list.", "updated_shopping_list": data}
 
 def edit_item_from_shopping_list(item=None, new_item=None, new_quantity=None, new_additional_info=None):
     if item is None:
         return {"status": "error", "message": "Item is missing."}
-    data = read_shopping_list()
+    data = api_client.get_shopping_list()
     if item not in data:
         return {"status": "error", "message": "Item not found in the shopping list."}
     if new_item is not None:
@@ -435,15 +401,14 @@ def edit_item_from_shopping_list(item=None, new_item=None, new_quantity=None, ne
         data[str(item)]["quantity"] = str(new_quantity)
     if new_additional_info is not None:
         data[str(item)]["additional_info"] = str(new_additional_info)
-    write_shopping_list(data)
+    api_client.edit_item_from_shopping_list(item=str(item), quantity=str(data[str(item)]["quantity"]), additional_info=str(data[str(item)]["additional_info"]))
     display_shopping_list(data)
     return {"status": "success", "message": f"Item '{item}' edited successfully.", "updated_shopping_list": data}
 
 def clear_shopping_list():
-    data = {}
-    write_shopping_list(data)
-    display_shopping_list(data)
-    return {"status": "success", "message": "Shopping list cleared successfully.", "updated_shopping_list": data}
+    api_client.clear_shopping_list()
+    display_shopping_list({})
+    return {"status": "success", "message": "Shopping list cleared successfully.", "updated_shopping_list": {}}
 
 def create_recipe(description = None, num_people = 1):
     # Set nextion page to 'recipe' if the controller is available.
@@ -456,7 +421,7 @@ def create_recipe(description = None, num_people = 1):
     if description is None:
         return {"status": "error", "message": "Description is missing."}
     # On lit les mémoires de l'utilisateur pour passer le contexte
-    data = read_memories()
+    data = api_client.get_memories()
     try:
         response = openai_client.chat.completions.create(
             model = "gpt-4.1",

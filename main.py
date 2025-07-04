@@ -5,8 +5,8 @@ import datetime
 from dotenv import load_dotenv
 from voice_agent import VoiceAgent
 from utils.nextion_controller import NextionController, DummyNextionController
-from utils.api_client import APIclient
-from utils.env_utils import save_credentials_to_env_file, load_credentials_from_env_file
+from utils.api_client import api_client
+from utils.env_utils import save_credentials_to_env_file
 from functions_utils import (
    set_nextion_controller,
    get_tool_handlers,
@@ -36,13 +36,11 @@ else:
     keyword_paths = ["models/cuistovoice_wakeword_rpi.ppn"]
     print("Using Raspberry Pi keyword.")
 
+nextion_controller.connect()
 ### set nextion controller in functions_utils
 set_nextion_controller(nextion_controller)
 
-nextion_controller.connect()
-
 DEV_SERVER_URL = "http://localhost:3000"
-api_client = APIclient()
 
 client_status = api_client.login(
     email=os.environ.get("CUISTOVOICE_EMAIL"),
@@ -62,9 +60,6 @@ if not database_content or len(database_content) == 0:
     database_content = "La base de données est actuellement vide. Tu peux rajouter des données en utilisant la fonction correspondante."
 if not user_config or len(user_config) == 0:
     nextion_controller.initiate_config()
-
-print("[DEBUG] User configuration loaded:", user_config)
-print("[DEBUG] Database content loaded:", database_content)
 
 with open('data/system_prompt.txt', 'r', encoding="utf-8") as file:
     instructions = file.read()
