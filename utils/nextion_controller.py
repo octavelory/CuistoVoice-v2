@@ -326,9 +326,10 @@ class NextionControllerAsync:
                 # check if email is valid
                 if not re.match(r"[^@]+@[^@]+\.[^@]+", self.email):
                     print("[NextionControllerAsync] Invalid email format.")
-                    await self._client.command('login_step_2.t5.txt="Email invalide"')
+                    await self._client.command('login_step_2.t1.txt="Email invalide"')
                     await self.set_page("login_step_2")
-                    return
+                else:
+                    print("[NextionControllerAsync] Valid email format.")
             if data.page_id == 15 and data.component_id == 4:
                 # password has been entered in login_step_3
                 self.password = await self._client.get("login_step_3.t1.txt")
@@ -339,6 +340,8 @@ class NextionControllerAsync:
                     await self._client.command('login_step_3.t5.txt="Mot de passe invalide"')
                     await self.set_page("login_step_3")
                     return
+                else:
+                    print("[NextionControllerAsync] Valid password format.")
 
     async def set_page(self, page_id):
         """
