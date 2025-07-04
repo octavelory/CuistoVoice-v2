@@ -322,6 +322,7 @@ class NextionControllerAsync:
             if data.page_id == 14 and data.component_id == 4:
                 # email has been entered in login_step_2
                 self.email = await self._client.get("login_step_2.t5.txt")
+                print(f"[NextionControllerAsync] Email entered: {self.email}")
                 # check if email is valid
                 if not re.match(r"[^@]+@[^@]+\.[^@]+", self.email):
                     print("[NextionControllerAsync] Invalid email format.")
@@ -330,7 +331,8 @@ class NextionControllerAsync:
                     return
             if data.page_id == 15 and data.component_id == 4:
                 # password has been entered in login_step_3
-                self.password = await self._client.get("login_step_3.t5.txt")
+                self.password = await self._client.get("login_step_3.t1.txt")
+                print(f"[NextionControllerAsync] Password entered: {self.password}")
                 # check if password is valid (not empty)
                 if not self.password or len(self.password) < 6:
                     print("[NextionControllerAsync] Invalid password format.")
