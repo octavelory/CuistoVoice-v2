@@ -1,6 +1,8 @@
 import requests
 import json
 from urllib.parse import quote
+import os
+from dotenv import load_dotenv
 
 class APIClient:
     """
@@ -11,7 +13,7 @@ class APIClient:
     def __init__(self, base_url: str = "https://cuistovoice.vercel.app"):
         """
         Initialise le client.
-        :param base_url: L'URL de base de votre application Next.js (ex: "http://localhost:3000")
+        :param base_url: L'URL de base de votre application Next.js
         """
         if base_url.endswith('/'):
             base_url = base_url[:-1]
@@ -189,4 +191,4 @@ class APIClient:
         # L'API DELETE pour les clés devrait accepter la clé dans le corps de la requête
         return self._make_request("DELETE", "keys", json={"publicKey": public_key})
 
-api_client = APIClient()
+api_client = APIClient(base_url="http://localhost:3000")  # Changez l'URL de base si nécessaire

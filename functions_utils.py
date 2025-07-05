@@ -758,6 +758,7 @@ def stop_music():
     # Note: The floating 'else' block from the original code is removed as its logic is now handled correctly.
 
 def play_music(search=None):
+    return {"status": "error", "message": "Cette fonction n'est pas encore disponible."}
     """
     Downloads and plays a song. Stops any existing playback first.
     """

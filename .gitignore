@@ -25,6 +25,7 @@ data/shopping_list.json
 data/database.json
 data/main_config.json
 messages_history.json
+key_generator.py
 
 device_private.key
 device_public.key

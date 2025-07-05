@@ -40,8 +40,6 @@ nextion_controller.connect()
 ### set nextion controller in functions_utils
 set_nextion_controller(nextion_controller)
 
-DEV_SERVER_URL = "http://localhost:3000"
-
 client_status = api_client.login(
     email=os.environ.get("CUISTOVOICE_EMAIL"),
     password=os.environ.get("CUISTOVOICE_PASSWORD")

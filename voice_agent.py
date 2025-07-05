@@ -11,6 +11,7 @@ import threading # Added
 import requests
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+from cryptography.hazmat.primitives import serialization
 
 import numpy as np
 import sounddevice as sd  # Added
@@ -1190,45 +1191,91 @@ def _read_cpu_serial_number():
             for line in f:
                 if line.startswith("Serial"):
                     return line.split(":")[1].strip()
-    except Exception as e:
-        print(f"Erreur lors de la lecture du numéro de série CPU: {e}")
+    except FileNotFoundError:
+        print(f"Mode Windows activé, impossible de lire /proc/cpuinfo.")
+        return "dev-device"
     return "unknown"
+
+def _load_private_key(key_path: Path):
+    """Charge la clé privée depuis un fichier et la retourne comme un objet utilisable."""
+    if not key_path.exists():
+        print(f"Erreur: Fichier de clé privée non trouvé à '{key_path}'!")
+        return None
+    
+    with open(key_path, "rb") as f:
+        # On charge la clé en utilisant la bibliothèque de cryptographie
+        # pour obtenir un objet clé, pas juste une chaîne de caractères.
+        private_key = serialization.load_pem_private_key(
+            f.read(),
+            password=None # Si votre clé n'est pas protégée par un mot de passe
+        )
+    return private_key
+
+# --- Votre fonction principale, maintenant corrigée ---
 
 def _get_ephemeral_key(session, model="gpt-4o-realtime-preview"):
     private_key_path = Path("device_private.key")
-    if not private_key_path.exists():
-        print("Private key file not found!")
+    
+    # 1. Charger la clé privée correctement
+    private_key = _load_private_key(private_key_path)
+    if not private_key:
         return None
-    with open(private_key_path, "r") as f:
-        private_key = f.read()
 
+    # 2. Définir le Key ID (kid)
+    # Il est crucial que ce 'kid' corresponde à celui que vous avez utilisé
+    # pour enregistrer la clé publique dans Redis.
+    key_id = f"cuistovoice-{_read_cpu_serial_number()}"
+    print(f"[get_ephemeral_key] Key ID: {key_id}")
+
+    # 3. Préparer le payload et les en-têtes du JWT
     payload = {
-        "iss": f"cuistovoice-{_read_cpu_serial_number()}",
+        "iss": key_id,  # L'issuer est souvent le kid lui-même
         "iat": int(time.time()),
-        "exp": int(time.time()) + 60
+        "exp": int(time.time()) + 60  # Expiration dans 60 secondes
     }
-    token = jwt.encode(payload, private_key, algorithm="RS256")
-
-    session["model"] = model
+    
     headers = {
+        "kid": key_id  # L'en-tête 'kid' est essentiel pour le serveur
+    }
+
+    # 4. Encoder le token avec le BON algorithme (ES256)
+    try:
+        token = jwt.encode(
+            payload,
+            private_key,
+            algorithm="ES256",
+            headers=headers
+        )
+    except Exception as e:
+        print(f"Erreur lors de l'encodage du JWT: {e}")
+        return None
+
+    # 5. Préparer la requête vers votre serveur
+    session["model"] = model  # Assurez-vous que le modèle est dans la session
+    
+    request_headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
+    
+    api_url = os.environ.get("BASE_URL", "http://localhost:3000") + "/api/temp_token"
 
+    # 6. Envoyer la requête
     try:
         response = requests.post(
-            os.environ.get("BASE_URL", "http://localhost:3000") + "/api/temp_token",
+            api_url,
             json=session,
-            headers=headers
+            headers=request_headers
         )
     except requests.RequestException as e:
         print(f"Erreur lors de la requête pour la clé éphémère: {e}")
         return None
 
     if response.status_code == 200:
+        print("[get_ephemeral_key] Clé éphémère récupérée avec succès.")
         return response.json().get("ephemeral_key")
     else:
-        print(f"Erreur lors de la récupération de la clé éphémère: {response.text}")
+        print(f"Erreur lors de la récupération de la clé éphémère (status {response.status_code}): {response.text}")
         return None
 
 def audio_to_pcm16_base64(audio_bytes: bytes) -> bytes:
