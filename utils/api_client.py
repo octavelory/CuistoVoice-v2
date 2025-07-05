@@ -2,9 +2,6 @@ import requests
 import json
 from urllib.parse import quote
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class APIClient:
     """

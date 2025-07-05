@@ -3,6 +3,7 @@ import os
 import json
 import datetime
 from dotenv import load_dotenv
+load_dotenv()
 from voice_agent import VoiceAgent
 from utils.nextion_controller import NextionController, DummyNextionController
 from utils.api_client import api_client
@@ -17,9 +18,6 @@ from functions_utils import (
    set_agent_set_music_flag_callback,
    set_agent_stop_event
 )
-
-# Load environment variables from .env file
-load_dotenv()
 
 # --- Nextion Setup ---
 if os.name == "nt":
