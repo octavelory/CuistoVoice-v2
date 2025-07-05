@@ -310,6 +310,7 @@ class NextionControllerAsync:
                 else:
                     print("[NextionControllerAsync] Valid email format.")
             if data.page_id == 15 and data.component_id == 4:
+                print("[NextionControllerAsync] Password entry step triggered.")
                 # password has been entered in login_step_3
                 self.password = await self._client.get("login_step_3.t1.txt")
                 print(f"[NextionControllerAsync] Password entered: {self.password}")
@@ -428,15 +429,13 @@ class NextionControllerAsync:
         await self.set_page("login_step_1")
         self.email = None
         self.password = None
-        while self.email is None and self.password is None:
+        # Wait for the user to enter their email and password
+        while not self.email:
             await asyncio.sleep(0.1)
-        print(self.email, self.password)
-        if self.email and self.password:
-            print(f"[NextionControllerAsync] User logged in with email: {self.email}")
-            return self.email, self.password
-        else:
-            print("[NextionControllerAsync] User cancelled login or did not provide valid credentials.")
-            return None, None
+        while not self.password:
+            await asyncio.sleep(0.1)
+        print(f"[NextionControllerAsync] Email: {self.email}, Password: {self.password}")
+        return self.email, self.password
 
 class NextionController:
     """
