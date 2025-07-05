@@ -4,13 +4,15 @@ from urllib.parse import quote
 import os
 from dotenv import load_dotenv
 
+load_dotenv()
+
 class APIClient:
     """
     Un client Python complet pour interagir avec l'API CuistoVoice.
     Gère l'authentification et la session pour effectuer toutes les actions
     disponibles au nom d'un utilisateur authentifié.
     """
-    def __init__(self, base_url: str = "https://cuistovoice.vercel.app"):
+    def __init__(self, base_url: str = os.environ.get("BASE_URL", "http://localhost:3000")):
         """
         Initialise le client.
         :param base_url: L'URL de base de votre application Next.js
@@ -191,4 +193,4 @@ class APIClient:
         # L'API DELETE pour les clés devrait accepter la clé dans le corps de la requête
         return self._make_request("DELETE", "keys", json={"publicKey": public_key})
 
-api_client = APIClient(base_url="http://localhost:3000")  # Changez l'URL de base si nécessaire
+api_client = APIClient()
