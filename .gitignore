@@ -26,6 +26,7 @@ data/database.json
 data/main_config.json
 messages_history.json
 key_generator.py
+test_complete_recipe.py
 
 device_private.key
 device_public.key

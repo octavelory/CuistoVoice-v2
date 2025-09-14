@@ -1,7 +1,7 @@
-import redis
 import json
 import random
 import datetime
+import requests
 import os
 import inspect
 import asyncio
@@ -321,12 +321,12 @@ def add_memory(title=None, content=None):
     if title is None or content is None:
         return {"status": "error", "message": "Title or content is missing."}
     data = api_client.get_memories()
-    mem_id = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
-    while mem_id in data:
-        mem_id = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
-    data[mem_id] = {"title": title, "content": content, "added": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-    api_client.add_memory(title=title, content=content, memory_id=mem_id)
-    return {"status": "success", "message": f"Memory with title '{title}' added successfully.", "memory_id": mem_id, "updated_database_content": data}
+    status = api_client.add_memory(title=title, content=content)
+    if status.get("id") and status.get("memory"):
+        mem_id = status["id"]
+        return {"status": "success", "message": f"Memory with title '{title}' added successfully.", "memory_id": mem_id, "updated_database_content": data}
+    else:
+        return {"status": "error", "message": "Failed to add memory. Please try again."}
 
 def delete_memory(memory_id=None):
     if memory_id is None:
@@ -465,6 +465,96 @@ def create_recipe(description = None, num_people = 1):
             "generated_recipe": recipe_data,
             "instructions_reminder": "N'oublie pas de donner les ingrédients et les étapes de la recette un par un. Autrement dit, donne **seulement** le premier ingrédient puis, lorsque l'utilisateur indique qu'il l'a bien en main, tu peux lui donner le second, et pareil pour les étapes, tu ne les dis que une par une."
         }
+
+def get_weather(location=None, forecast_days=1):
+    loc = location or "Paris"
+    days = max(1, min(int(forecast_days or 1), 3))
+    url = f"https://api.weatherapi.com/v1/forecast.json?key=fbf7716f57f143aeb19175514250607&q={loc}&days={days}&aqi=yes&alerts=yes"
+    response = requests.get(url)
+    if response.status_code != 200:
+        return {"status": "error", "message": "Failed to fetch weather data."}
+    data = response.json()
+
+    # --- Extract location ---
+    location_info = data.get("location", {})
+    location_summary = {
+        "city": location_info.get("name"),
+        "region": location_info.get("region"),
+        "country": location_info.get("country"),
+        "localtime": location_info.get("localtime"),
+    }
+
+    # --- Extract current weather ---
+    current = data.get("current", {})
+    current_weather = {
+        "temperature_c": current.get("temp_c"),
+        "feelslike_c": current.get("feelslike_c"),
+        "condition": current.get("condition", {}).get("text"),
+        "humidity_percent": current.get("humidity"),
+        "wind_kph": current.get("wind_kph"),
+        "wind_dir": current.get("wind_dir"),
+        "pressure_mb": current.get("pressure_mb"),
+        "precip_mm": current.get("precip_mm"),
+        "cloud_percent": current.get("cloud"),
+        "uv_index": current.get("uv"),
+        "air_quality": {
+            "pm2_5": current.get("air_quality", {}).get("pm2_5"),
+            "pm10": current.get("air_quality", {}).get("pm10"),
+            "o3": current.get("air_quality", {}).get("o3"),
+            "no2": current.get("air_quality", {}).get("no2"),
+            "so2": current.get("air_quality", {}).get("so2"),
+            "co": current.get("air_quality", {}).get("co"),
+            "us_epa_index": current.get("air_quality", {}).get("us-epa-index"),
+        }
+    }
+
+    # --- Extract forecast (per day) ---
+    forecast_days_list = []
+    for day in data.get("forecast", {}).get("forecastday", [])[:days]:
+        day_info = day.get("day", {})
+        forecast_days_list.append({
+            "date": day.get("date"),
+            "condition": day_info.get("condition", {}).get("text"),
+            "min_temp_c": day_info.get("mintemp_c"),
+            "max_temp_c": day_info.get("maxtemp_c"),
+            "avg_temp_c": day_info.get("avgtemp_c"),
+            "max_wind_kph": day_info.get("maxwind_kph"),
+            "total_precip_mm": day_info.get("totalprecip_mm"),
+            "avg_humidity_percent": day_info.get("avghumidity"),
+            "uv_index": day_info.get("uv"),
+            "air_quality": {
+                "pm2_5": day_info.get("air_quality", {}).get("pm2_5"),
+                "pm10": day_info.get("air_quality", {}).get("pm10"),
+                "o3": day_info.get("air_quality", {}).get("o3"),
+                "no2": day_info.get("air_quality", {}).get("no2"),
+                "so2": day_info.get("air_quality", {}).get("so2"),
+                "co": day_info.get("air_quality", {}).get("co"),
+                "us_epa_index": day_info.get("air_quality", {}).get("us-epa-index"),
+            }
+        })
+
+    # --- Extract alerts ---
+    alerts = []
+    for alert in data.get("alerts", {}).get("alert", []):
+        alerts.append({
+            "headline": alert.get("headline"),
+            "severity": alert.get("severity"),
+            "event": alert.get("event"),
+            "effective": alert.get("effective"),
+            "expires": alert.get("expires"),
+            "description": alert.get("desc"),
+            "instruction": alert.get("instruction"),
+        })
+
+    response = {
+        "status": "success",
+        "message": "Weather data fetched successfully.",
+        "location": location_summary,
+        "current_weather": current_weather,
+        "forecast_days": forecast_days_list,
+        "alerts": alerts,
+    }
+    return response
 
 # ---------------------------------------------------------------------------
 # MUSIC PLAYBACK FUNCTIONS

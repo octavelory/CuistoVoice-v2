@@ -61,8 +61,8 @@ with open('data/system_prompt.txt', 'r', encoding="utf-8") as file:
     instructions = file.read()
     instructions = instructions.format(
         database_content=database_content,
-        time_info=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        username=user_config.get("name"),
+        time_info=datetime.datetime.now().strftime("%A %Y-%m-%d %H:%M:%S"),
+        username=user_config.get("name")
     )
 
 with open("messages_history.json", "w", encoding="utf-8") as f:
@@ -107,6 +107,9 @@ for p in keyword_paths:
         print(f"Error: Porcupine keyword file not found at {p}. Exiting.")
         exit(1)
 
+with open("data/speaker_profile.bin", "rb") as main_speaker_file:
+    main_speaker_profile = main_speaker_file.read()
+
 async def main():
     # Initialize SongManager (optional, can be done in functions_utils on demand)
     # song_manager = SongManager()
@@ -126,12 +129,12 @@ async def main():
         porcupine_keyword_paths=keyword_paths,
         porcupine_model_path=model_path,
         porcupine_sensitivity=0.9,
-        voice="ash",
+        voice="marin",
         speed = 1.05,
         temperature=0.6,
         instructions=instructions,
         turn_detection={"type": "semantic_vad", "eagerness": "medium"},
-        noise_reduction="far_field",
+        noise_reduction=None,
         tools = tools,
         tool_handlers=tool_handlers,
         history_file="messages_history.json",

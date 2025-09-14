@@ -2,6 +2,9 @@ import requests
 import json
 from urllib.parse import quote
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class APIClient:
     """
@@ -88,19 +91,23 @@ class APIClient:
             print(f"Erreur de connexion: {e}")
             raise
 
-    # --- Configuration Utilisateur ---
-
+    # --- Configuration Utilisateur (user:<userId>:config, Hash) ---
     def get_config(self, force_refresh: bool = False) -> dict:
-        """Récupère la configuration de l'utilisateur et la met en cache."""
+        """
+        Récupère la configuration de l'utilisateur (clé Redis : user:<userId>:config).
+        Champs : name, mainLanguage, location.
+        """
         if self._config is None or force_refresh:
             self._config = self._make_request("GET", "config")
         return self._config
 
     def update_config(self, name: str, main_language: str, location: str) -> dict:
-        """Met à jour la configuration de l'utilisateur."""
+        """
+        Met à jour la configuration de l'utilisateur (clé Redis : user:<userId>:config).
+        """
         payload = {"name": name, "mainLanguage": main_language, "location": location}
         response = self._make_request("POST", "config", json=payload)
-        self.get_config(force_refresh=True) # Invalide le cache
+        self.get_config(force_refresh=True)
         return response
 
     @property
@@ -115,79 +122,108 @@ class APIClient:
     def main_language(self) -> str:
         return self.get_config().get("mainLanguage", "")
 
-    # --- Minuteurs (Timers) ---
-
-    def get_timers(self) -> list:
-        """Récupère la liste des minuteurs actifs."""
+    # --- Minuteurs (Timers) (user:<userId>:timers, Hash, TTL par champ via HEXPIRE) ---
+    def get_timers(self) -> dict:
+        """
+        Récupère la liste des minuteurs actifs (clé Redis : user:<userId>:timers).
+        Chaque champ = timer_id, valeur = JSON (id, name, duration, start).
+        """
         return self._make_request("GET", "timers")
 
     def add_timer(self, name: str, duration_seconds: int) -> dict:
-        """Ajoute un nouveau minuteur."""
+        """
+        Ajoute un nouveau minuteur (clé Redis : user:<userId>:timers).
+        """
         return self._make_request("POST", "timers", json={"name": name, "duration": duration_seconds})
 
     def delete_timer(self, timer_id: str) -> dict:
-        """Supprime un minuteur par son ID."""
+        """
+        Supprime un minuteur par son ID (clé Redis : user:<userId>:timers).
+        """
         return self._make_request("DELETE", f"timers/{timer_id}")
 
     def clear_all_timers(self) -> dict:
-        """Supprime tous les minuteurs de l'utilisateur."""
+        """
+        Supprime tous les minuteurs de l'utilisateur (clé Redis : user:<userId>:timers).
+        """
         return self._make_request("POST", "timers/clear")
 
-    # --- Souvenirs (Memories) ---
-    
+    # --- Souvenirs (Memories) (user:<userId>:memories, Hash) ---
     def get_memories(self) -> dict:
-        """Récupère tous les souvenirs de l'utilisateur."""
+        """
+        Récupère tous les souvenirs de l'utilisateur (clé Redis : user:<userId>:memories).
+        Chaque champ = memory_id, valeur = JSON (title, content, added).
+        """
         return self._make_request("GET", "memories")
 
     def add_memory(self, title: str, content: str) -> dict:
-        """Ajoute un nouveau souvenir."""
+        """
+        Ajoute un nouveau souvenir (clé Redis : user:<userId>:memories).
+        """
         return self._make_request("POST", "memories", json={"title": title, "content": content})
 
     def update_memory(self, memory_id: str, title: str, content: str) -> dict:
-        """Met à jour un souvenir existant."""
+        """
+        Met à jour un souvenir existant (clé Redis : user:<userId>:memories).
+        """
         return self._make_request("POST", f"memories/edit/{memory_id}", json={"title": title, "content": content})
 
     def delete_memory(self, memory_id: str) -> dict:
-        """Supprime un souvenir par son ID."""
+        """
+        Supprime un souvenir par son ID (clé Redis : user:<userId>:memories).
+        """
         return self._make_request("DELETE", f"memories/{memory_id}")
 
-    # --- Liste de Courses (Shopping) ---
-
+    # --- Liste de Courses (Shopping List) (user:<userId>:shopping_list, Hash) ---
     def get_shopping_list(self) -> dict:
-        """Récupère la liste de courses de l'utilisateur."""
-        return self._make_request("GET", "shopping")
+        """
+        Récupère la liste de courses de l'utilisateur (clé Redis : user:<userId>:shopping_list).
+        Chaque champ = nom de l'article, valeur = JSON (quantity, additionalInfo).
+        """
+        return self._make_request("GET", "shopping_list")
 
     def add_shopping_item(self, item: str, quantity: str, additional_info: str = "") -> dict:
-        """Ajoute un article à la liste de courses."""
+        """
+        Ajoute un article à la liste de courses (clé Redis : user:<userId>:shopping_list).
+        Le nom de l'article est la clé du hash.
+        """
         payload = {"item": item, "quantity": quantity, "additionalInfo": additional_info}
-        return self._make_request("POST", "shopping", json=payload)
+        return self._make_request("POST", "shopping_list", json=payload)
 
     def update_shopping_item(self, original_item_name: str, new_item_name: str, quantity: str, additional_info: str = "") -> dict:
-        """Met à jour un article de la liste de courses."""
+        """
+        Met à jour un article de la liste de courses (clé Redis : user:<userId>:shopping_list).
+        """
         payload = {"newItem": new_item_name, "quantity": quantity, "additionalInfo": additional_info}
-        return self._make_request("POST", f"shopping/edit/{quote(original_item_name)}", json=payload)
+        return self._make_request("POST", f"shopping_list/edit/{quote(original_item_name)}", json=payload)
 
     def delete_shopping_item(self, item_name: str) -> dict:
-        """Supprime un article de la liste de courses par son nom."""
-        return self._make_request("POST", f"shopping/delete/{quote(item_name)}")
+        """
+        Supprime un article de la liste de courses par son nom (clé Redis : user:<userId>:shopping_list).
+        """
+        return self._make_request("POST", f"shopping_list/delete/{quote(item_name)}")
 
-    # --- Clés Publiques des Appareils ---
-    # Note: ces endpoints n'existent pas encore, il faudrait les créer dans Next.js
-    # sur le modèle de /app/api/keys/route.ts que j'ai fourni précédemment.
-    # Je les inclus ici pour que le client soit complet.
+    # --- Clés Publiques JWT (jwt_public_keys, Hash global) ---
+    def get_jwt_public_keys(self) -> dict:
+        """
+        Récupère la liste des clés publiques JWT (clé Redis : jwt_public_keys, hash global).
+        Chaque champ = kid, valeur = clé publique PEM.
+        """
+        return self._make_request("GET", "jwt_public_keys")
 
-    def get_public_keys(self) -> list:
-        """Récupère la liste des clés publiques associées au compte."""
-        # Suppose que l'endpoint /api/keys existe et retourne une liste de clés
-        return self._make_request("GET", "keys")
+    def add_jwt_public_key(self, kid: str, public_key: str) -> dict:
+        """
+        Ajoute une nouvelle clé publique JWT (clé Redis : jwt_public_keys).
+        kid = identifiant de la clé (Key ID).
+        """
+        return self._make_request("POST", "jwt_public_keys", json={"kid": kid, "publicKey": public_key})
 
-    def add_public_key(self, public_key: str) -> dict:
-        """Ajoute une nouvelle clé publique pour un appareil."""
-        return self._make_request("POST", "keys", json={"publicKey": public_key})
-
-    def delete_public_key(self, public_key: str) -> dict:
-        """Supprime une clé publique."""
-        # L'API DELETE pour les clés devrait accepter la clé dans le corps de la requête
-        return self._make_request("DELETE", "keys", json={"publicKey": public_key})
+    def delete_jwt_public_key(self, kid: str) -> dict:
+        """
+        Supprime une clé publique JWT par son kid (clé Redis : jwt_public_keys).
+        """
+        return self._make_request("DELETE", f"jwt_public_keys/{kid}")
 
 api_client = APIClient()
+api_client.login(email=os.environ.get("CUISTOVOICE_EMAIL"), password=os.environ.get("CUISTOVOICE_PASSWORD"))
+#print(api_client.add_memory("Test Memory", "This is a test memory content."))  # Example usage

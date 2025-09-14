@@ -5,6 +5,7 @@ openai[realtime]
 sounddevice
 pydub
 pvporcupine
+pveagle
 pvrecorder
 requests
 bs4

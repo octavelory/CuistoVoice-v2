@@ -295,7 +295,7 @@ class NextionControllerAsync:
                 # Envoyer un message au realtime client indiquant l'annulation de la recette
                 if self._voice_agent:
                     print("[Nextion Touch] Sending recipe cancellation message to agent...")
-                    await self._voice_agent.send_text("[SYSTEM] This is a system message: The user cancelled the current recipe.")
+                    await self._voice_agent.send_text("[SYSTEM] This is a system message: Using your screen, the user cancelled the current recipe or maybe he has finished it.")
                 else:
                     print("[Nextion Touch] Warning: VoiceAgent not set, cannot send recipe cancellation message.")
             if data.page_id == 14 and data.component_id == 4:

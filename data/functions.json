@@ -248,7 +248,7 @@
     {
         "name": "play_music",
         "type": "function",
-        "description": "Joue de la musique à partir d'une recherche. Arrête toute musique en cours avant de démarrer la nouvelle. Tu peux appeler cette fonction si l'utilisateur te demande de mettre de la musique. L'utilisateur a un compte Spotify Premium tu peux donc jouer n'importe quelle musique.",
+        "description": "Joue de la musique à partir d'une recherche. Tu peux appeler cette fonction si l'utilisateur te demande de mettre de la musique. L'utilisateur a un compte Spotify Premium tu peux donc jouer n'importe quelle musique.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -258,6 +258,25 @@
                 }
             },
             "required": ["search"]
+        }
+    },
+    {
+        "name": "get_weather",
+        "type": "function",
+        "description": "Renvoie la météo actuelle pour une ville donnée.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "La ville pour laquelle obtenir la météo. Ex. : 'San Francisco'."
+                },
+                "forecast_days": {
+                    "type": "integer",
+                    "description": "Optionnel. Le nombre de jours pour lesquels obtenir la prévision météo. Par défaut, 1 jour. Entre 1 et 3 jours."
+                }
+            },
+            "required": ["location"]
         }
     }
 ]

@@ -43,7 +43,7 @@ class VoiceAgent:
         porcupine_keyword_paths: List[str],
         porcupine_model_path: str = None,
         porcupine_sensitivity: float = 0.5,
-        model: str = "gpt-4o-realtime-preview",
+        model: str = "gpt-realtime",
         temperature: float = 0.6,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_handlers: Optional[Dict[str, Callable]] = None,
@@ -52,7 +52,7 @@ class VoiceAgent:
         instructions: str = "Réponds d'un ton enjoué et amical !",
         auto_reconnect: bool = True,
         turn_detection: Dict[str, Any] = {"type": "semantic_vad"},
-        noise_reduction: str = "far_field",  # Added noise reduction option
+        noise_reduction: Optional[str] = None,
         on_response_start: Optional[Callable] = None,
         on_response_done: Optional[Callable] = None,
         on_transcript: Optional[Callable[[str], None]] = None,
@@ -574,10 +574,7 @@ class VoiceAgent:
                 status = tool_result.get("status", "unknown")
                 print(f"Tool '{function_name}' finished with status: {status}. Message: {result_output}")
             else:
-                # Handle unexpected return type
-                result_output = str(tool_result)
                 print(f"Warning: Tool '{function_name}' returned unexpected type. Treating as string output.")
-
 
             # --- Send result back to OpenAI ONLY if response is needed ---
             if not no_response_needed:
@@ -587,7 +584,7 @@ class VoiceAgent:
                     "item": {
                         "type": "function_call_output",
                         "call_id": call_id,
-                        "output": result_output # Send the message part as output
+                        "output": str(tool_result) # Send the message part as output
                     }
                 })
             else:
